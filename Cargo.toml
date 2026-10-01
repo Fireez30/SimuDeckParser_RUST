@@ -1,0 +1,31 @@
+[package]
+name = "simu_deck_parser"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+anyhow = "1.0.104"
+chrono = "0.4.45"
+dirs = "7.0.0"
+eframe = "0.36.2"
+egui = "0.36.2"
+egui_extras = { version = "0.36.2", features = ["image", "file"] }
+egui_material_icons = { version = "0.8.0", features = ["filled", "outline"] }
+flate2 = "1.1.10"
+image = { version = "0.25.10", default-features = false, features = ["jpeg", "png"] }
+keyring = "4.2.0"
+open = "5.4.4"
+pdf-writer = "0.15.0"
+serde_json = "1.0.151"
+subsetter = "0.2.6"
+ttf-parser = "0.25.1"
+ureq = "3.4.2"
+zeroize = "1.9.0"
+
+[dev-dependencies]
+egui_kittest = { version = "0.36.2", features = ["wgpu", "snapshot", "eframe"] }
+tempfile = "3.27.0"
+
+[profile.release]
+opt-level = 3
+strip = true
