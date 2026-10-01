@@ -79,6 +79,14 @@ The deck is saved as a new file in the simulator's `Decks` folder, in the simula
 
 The import runs in the background; the new deck opens when it is done. If a card is not found, the tool searches for the equivalent card (JP or EN, foil or non foil). If a deck cannot be imported, please open an issue with the link of the deck.
 
+## Encore Decks account decks
+
+The "Encore" screen shows every deck of your linked account (see below) on encoredecks.com, private and unfinished ones included, 24 decks per page: "Previous" and "Next" turn the pages, and the list can be re-read at any time.
+
+Click a deck to preview it: its cards are read from encoredecks.com and shown like a simulator deck, matched to the loaded cards (JP/EN, foil or non foil). Import it with "Import" if you want it in the simulator: it is saved as a new file in the `Decks` folder, exactly like a link import; existing decks are never overwritten. Decks already present in the simulator are marked "in the simulator".
+
+Without a linked account, the screen explains how to link one in Settings. The lists are read in the background, with the same session as uploads. If the session has expired, the account is unlinked: link it again in Settings.
+
 ## Settings
 
 Theme, the simulator folder (with "Reload cards" after a simulator update and "Change folder…"), and where the decks folder is.

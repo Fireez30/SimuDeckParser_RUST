@@ -312,6 +312,66 @@ fn screenshots() {
         harness.get_by_label("Import").click();
         shot(&mut harness, "6-import");
         harness.key_press(egui::Key::Escape);
+        // The Encore screen: the linked account's decks, previewed then imported.
+        let account = simu_deck_parser::encore::Account {
+            name: "Megumin".into(),
+            session: zeroize::Zeroizing::new("fake".into()),
+        };
+        harness.state_mut().account = Some(account.clone());
+        // Loaded before the screen opens: it would fetch the page over the network.
+        harness.state_mut().encore_page.open_loaded(
+            simu_deck_parser::encore::DeckPage {
+                page: 1,
+                total_pages: 2,
+                total_decks: 30,
+                decks: [
+                    ("Megumin explosion", "abc123", ""),
+                    ("Encore deck", "def456", "Tournament deck"),
+                    ("Unnamed", "ghi789", ""),
+                ]
+                .into_iter()
+                .map(|(name, id, description)| simu_deck_parser::encore::AccountDeck {
+                    name: name.into(),
+                    id: id.into(),
+                    date: "03:04  01/02/2025".into(),
+                    description: description.into(),
+                })
+                .collect(),
+            },
+        );
+        harness.get_by_label("Encore").click();
+        harness.run_steps(2);
+        shot(&mut harness, "6b-encore");
+        // A picked deck previews its cards (already resolved, so nothing is fetched).
+        let series = harness.state().series.clone();
+        let codes: Vec<String> = [
+            "KS/W49-E001",
+            "KS/W49-E001",
+            "KS/W49-E002",
+            "KS/W49-E033",
+            "KS/W49-E037",
+            "XX/Y1-001",
+        ]
+        .map(String::from)
+        .to_vec();
+        let resolved = simu_deck_parser::encore::build_deck(
+            &simu_deck_parser::codes::CardIndex::new(&series),
+            "Encore deck",
+            "03:04  01/02/2025",
+            &codes,
+        );
+        harness.state_mut().encore_page.preview_loaded(
+            simu_deck_parser::encore::AccountDeck {
+                name: "Encore deck".into(),
+                id: "def456".into(),
+                date: "03:04  01/02/2025".into(),
+                description: "Tournament deck".into(),
+            },
+            resolved,
+        );
+        shot(&mut harness, "6c-encore-preview");
+        harness.state_mut().account = None;
+        harness.run_steps(2);
         harness.get_by_label("Settings").click();
         shot(&mut harness, "7-settings");
         harness.state_mut().account = Some(simu_deck_parser::encore::Account {
@@ -334,3 +394,7 @@ fn screenshots() {
         shot(&mut harness, "9-setup-detected");
     }
 }
+
+
+
+

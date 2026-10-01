@@ -15,6 +15,8 @@ const API: &str = "https://www.encoredecks.com/api/deck/";
 const CARD_API: &str = "https://www.encoredecks.com/api/card";
 const SAVE_API: &str = "https://www.encoredecks.com/api/deck";
 const DECK_PAGE: &str = "https://www.encoredecks.com/deck/";
+/// Deck search: serves 24 decks per page, with `page`, `username` and `invalid` parameters.
+const SEARCH_API: &str = "https://www.encoredecks.com/api/search/deck";
 const LOGIN_API: &str = "https://www.encoredecks.com/api/login";
 const LOGOUT_API: &str = "https://www.encoredecks.com/api/logout";
 /// Redirects to `/user/<name>` when logged in, to `/login` otherwise.
@@ -121,6 +123,107 @@ pub fn fetch_deck(id: &str) -> Result<EncoreDeck> {
         .context("reading the encoredecks response")?;
     let json: Value = serde_json::from_str(&body).context("encoredecks returned invalid JSON")?;
     parse_deck_json(&json)
+}
+
+/// One of the linked account's decks, as the deck search lists it (no cards resolved).
+#[derive(Clone, Debug, PartialEq)]
+pub struct AccountDeck {
+    pub name: String,
+    /// Encore Decks id: the last path part of the deck's link.
+    pub id: String,
+    /// Already formatted the way the simulator stores it: `HH:MM  MM/DD/YYYY`.
+    pub date: String,
+    pub description: String,
+}
+
+/// One page of the account's decks; the search API serves 24 decks per page.
+#[derive(Debug, PartialEq)]
+pub struct DeckPage {
+    pub decks: Vec<AccountDeck>,
+    /// 1-based page number.
+    pub page: u32,
+    pub total_pages: u32,
+    pub total_decks: u32,
+}
+
+/// `PPyvcLuvt` -> `https://www.encoredecks.com/deck/PPyvcLuvt`: a link [`import`] accepts.
+pub fn deck_link(id: &str) -> String {
+    format!("{DECK_PAGE}{}", id.trim())
+}
+
+/// Parses one page of the deck search response.
+pub fn parse_search_json(json: &Value) -> Result<DeckPage> {
+    let decks = json
+        .get("decks")
+        .and_then(Value::as_array)
+        .ok_or_else(|| anyhow!("encoredecks returned no deck list"))?;
+    let decks: Vec<AccountDeck> = decks
+        .iter()
+        .map(|d| {
+            let name = d
+                .get("name")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .filter(|n| !n.is_empty())
+                .unwrap_or("(unnamed deck)")
+                .to_string();
+            let id = d
+                .get("deckid")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string();
+            let date = ["datemodified", "datecreated"]
+                .iter()
+                .find_map(|k| d.get(*k).and_then(Value::as_str))
+                .and_then(simulator_date)
+                .unwrap_or_default();
+            let description = d
+                .get("description")
+                .and_then(Value::as_str)
+                .map(str::trim)
+                .unwrap_or_default()
+                .to_string();
+            AccountDeck {
+                name,
+                id,
+                date,
+                description,
+            }
+        })
+        .filter(|d| !d.id.is_empty())
+        .collect();
+    Ok(DeckPage {
+        decks,
+        page: json.get("page").and_then(Value::as_u64).unwrap_or(1) as u32,
+        total_pages: json
+            .get("totalPages")
+            .and_then(Value::as_u64)
+            .unwrap_or(1)
+            .max(1) as u32,
+        total_decks: json.get("totalDecks").and_then(Value::as_u64).unwrap_or(0) as u32,
+    })
+}
+
+/// One page (1-based, 24 decks) of the linked account's decks on encoredecks.com, private
+/// and unfinished ones included. Blocking: run it off the UI thread.
+pub fn fetch_account_decks(session: &str, page: u32) -> Result<DeckPage> {
+    if account_name(session)?.is_none() {
+        return Err(SessionExpired.into());
+    }
+    let url = format!("{SEARCH_API}?page={}&username=true&invalid=1", page.max(1));
+    let body = ureq::get(&url)
+        .config()
+        .max_redirects(0)
+        .build()
+        .header("Cookie", cookie(session).as_str())
+        .call()
+        .with_context(|| format!("requesting {url}"))?
+        .body_mut()
+        .read_to_string()
+        .context("reading the encoredecks response")?;
+    let json: Value = serde_json::from_str(&body).context("encoredecks returned invalid JSON")?;
+    parse_search_json(&json)
 }
 
 /// Resolves card codes against the loaded simulator cards and builds a displayable deck.
@@ -561,6 +664,52 @@ mod tests {
         assert!(deck_url_from_response(&json!({"message": "something went wrong"})).is_err());
     }
 
+    #[test]
+    fn search_page_parsing() {
+        assert_eq!(
+            deck_link(" PPyvcLuvt "),
+            "https://www.encoredecks.com/deck/PPyvcLuvt"
+        );
+        // Shape of `/api/search/deck` (fields the select leaves out are absent).
+        let page = parse_search_json(&json!({
+            "decks": [
+                {"name": " My deck ", "deckid": "PPyvcLuvt",
+                 "datemodified": "2025-01-02T03:04:05Z", "description": " fun "},
+                {"name": "", "deckid": "  ", "description": null},
+                {"name": "Old deck", "deckid": "abc",
+                 "datecreated": "2024-12-31T23:59:59.999Z", "description": ""}
+            ],
+            "totalDecks": 25, "limit": 24, "totalPages": 2, "page": 1,
+            "hasNextPage": true
+        }))
+        .unwrap();
+        assert_eq!(
+            page,
+            DeckPage {
+                decks: vec![
+                    AccountDeck {
+                        name: "My deck".into(),
+                        id: "PPyvcLuvt".into(),
+                        date: "03:04  01/02/2025".into(),
+                        description: "fun".into(),
+                    },
+                    AccountDeck {
+                        name: "Old deck".into(),
+                        id: "abc".into(),
+                        date: "23:59  12/31/2024".into(),
+                        description: String::new(),
+                    },
+                ],
+                page: 1,
+                total_pages: 2,
+                total_decks: 25,
+            }
+        );
+        assert!(parse_search_json(&json!({"message": "Something went wrong"})).is_err());
+        let empty = parse_search_json(&json!({"decks": []})).unwrap();
+        assert_eq!((empty.decks.len(), empty.total_pages), (0, 1));
+    }
+
     /// Hits the network (read-only): `cargo test -- --ignored live_card_lookup`.
     #[test]
     #[ignore]
@@ -576,12 +725,20 @@ mod tests {
         assert_eq!(missing, ["NOPE/X00-000"]);
     }
 
-    /// Hits the network: `cargo test -- --ignored live_encoredecks`.
+    /// Hits the network (read-only): `cargo test -- --ignored live_encoredecks`.
     #[test]
     #[ignore]
     fn live_encoredecks() {
         let deck = fetch_deck("PPyvcLuvt").unwrap();
         assert!(!deck.name.is_empty());
         assert_eq!(deck.codes.len(), 50);
+    }
+
+    /// Hits the network (read-only): `cargo test -- --ignored live_account_decks`.
+    #[test]
+    #[ignore]
+    fn live_account_decks() {
+        let err = fetch_account_decks("s%3Anot-a-session", 1).unwrap_err();
+        assert!(err.is::<SessionExpired>());
     }
 }

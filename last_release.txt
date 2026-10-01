@@ -10,7 +10,7 @@ Decks :
 - Deck list 
 - Deck stats (cards, types, level and colors) 
 
-latest (0.1.0):
+0.1.0:
 Visuals :
 - New material design with theme switching
 
@@ -32,4 +32,12 @@ Cards view :
 - Added a related cards button (or on mouse hover in a card effect, that display the card citing the current card (resonate, bond , etc)) 
 - Sorted cards by types > color > cost > power 
 - Added a combo climax filter
-- Added traits filtering
+- Added traits 
+
+
+latest (0.1.1) : 
+
+Added a whole section that use encoredecks connection to list encore decks decks.
+- list of all decks paginated 
+- possibility to see a full encoredecks deck 
+- possibility to import a deck from your encore decks deck, not only by list

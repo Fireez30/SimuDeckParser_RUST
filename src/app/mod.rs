@@ -1,7 +1,9 @@
 mod card_list;
 mod card_view;
 mod deck_editor;
+mod deck_preview;
 mod deck_viewer;
+mod encore_page;
 mod theme;
 
 #[cfg(test)]
@@ -13,9 +15,9 @@ use std::sync::mpsc::{self, Receiver, TryRecvError};
 
 use egui::{Margin, RichText, ScrollArea, ThemePreference, Ui};
 use egui_material_icons::icons::{
-    ICON_ACCOUNT_CIRCLE, ICON_BRIGHTNESS_AUTO, ICON_CHECK_CIRCLE, ICON_DARK_MODE, ICON_ERROR,
-    ICON_FOLDER, ICON_FOLDER_OPEN, ICON_LIGHT_MODE, ICON_LOGIN, ICON_LOGOUT, ICON_REFRESH,
-    ICON_SETTINGS, ICON_STACKS, ICON_STYLE,
+    ICON_ACCOUNT_CIRCLE, ICON_BRIGHTNESS_AUTO, ICON_CHECK_CIRCLE, ICON_CLOUD_DOWNLOAD,
+    ICON_DARK_MODE, ICON_ERROR, ICON_FOLDER, ICON_FOLDER_OPEN, ICON_LIGHT_MODE, ICON_LOGIN,
+    ICON_LOGOUT, ICON_REFRESH, ICON_SETTINGS, ICON_STACKS, ICON_STYLE,
 };
 use simu_deck_parser::codes::NameIndex;
 use simu_deck_parser::credentials;
@@ -28,6 +30,7 @@ use zeroize::{Zeroize, Zeroizing};
 
 use card_list::CardList;
 use deck_viewer::DeckViewer;
+use encore_page::EncorePage;
 use theme::{Snackbar, scheme};
 
 const THEME_KEY: &str = "ui_theme";
@@ -71,6 +74,7 @@ enum Screen {
     Setup,
     Cards,
     Decks,
+    Encore,
     Settings,
 }
 
@@ -78,6 +82,7 @@ impl Screen {
     fn key(self) -> &'static str {
         match self {
             Screen::Decks => "decks",
+            Screen::Encore => "encore",
             _ => "cards",
         }
     }
@@ -184,6 +189,8 @@ pub struct App {
     quitting: bool,
     card_list: CardList,
     deck_viewer: DeckViewer,
+    /// The Encore screen: the linked account's decks on encoredecks.com.
+    encore_page: EncorePage,
 }
 
 impl App {
@@ -232,6 +239,7 @@ impl App {
             quitting: false,
             card_list: CardList::default(),
             deck_viewer: DeckViewer::default(),
+            encore_page: EncorePage::default(),
         };
         if app.setup.resolved.is_some() {
             app.load_simulator(ctx, false);
@@ -458,6 +466,7 @@ impl App {
         self.layout = None;
         self.card_list = CardList::default();
         self.deck_viewer = DeckViewer::default();
+        self.encore_page = EncorePage::default();
         self.screen = Screen::Setup;
         self.setup.revalidate();
         if self.setup.detected.is_empty() && self.setup.detecting.is_none() {
@@ -706,6 +715,7 @@ impl App {
             for (screen, icon, label) in [
                 (Screen::Cards, ICON_STYLE, "Cards"),
                 (Screen::Decks, ICON_STACKS, "Decks"),
+                (Screen::Encore, ICON_CLOUD_DOWNLOAD, "Encore"),
             ] {
                 if theme::rail_item(ui, icon, label, self.screen == screen).clicked() {
                     target = Some(screen);
@@ -1005,6 +1015,16 @@ impl eframe::App for App {
                         self.account_form.restoring.is_some(),
                     );
                 }
+                Screen::Encore => {
+                    let decks = self.layout.as_ref().map(Layout::decks).unwrap_or_default();
+                    self.encore_page.show(
+                        ui,
+                        &self.series,
+                        &decks,
+                        self.account.as_ref(),
+                        self.account_form.restoring.is_some(),
+                    );
+                }
                 Screen::Settings => {
                     egui::CentralPanel::default()
                         .frame(
@@ -1021,6 +1041,12 @@ impl eframe::App for App {
             self.notify(notice);
         }
         if self.deck_viewer.take_session_expired() {
+            self.unlink_account(&ctx);
+        }
+        if let Some(notice) = self.encore_page.take_notice() {
+            self.notify(notice);
+        }
+        if self.encore_page.take_session_expired() {
             self.unlink_account(&ctx);
         }
         self.poll_account();
