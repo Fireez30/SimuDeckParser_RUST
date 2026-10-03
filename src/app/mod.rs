@@ -715,7 +715,7 @@ impl App {
             for (screen, icon, label) in [
                 (Screen::Cards, ICON_STYLE, "Cards"),
                 (Screen::Decks, ICON_STACKS, "Decks"),
-                (Screen::Encore, ICON_CLOUD_DOWNLOAD, "Encore"),
+                (Screen::Encore, ICON_CLOUD_DOWNLOAD, "Encore Deck"),
             ] {
                 if theme::rail_item(ui, icon, label, self.screen == screen).clicked() {
                     target = Some(screen);
