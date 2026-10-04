@@ -1,6 +1,6 @@
 [package]
 name = "simu_deck_parser"
-version = "0.1.0"
+version = "0.1.2"
 edition = "2024"
 
 [dependencies]

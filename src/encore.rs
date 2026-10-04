@@ -264,7 +264,7 @@ pub fn import(link: &str, series: &[Serie], decks_dir: &Path) -> Result<(Deck, V
 
     let index = CardIndex::new(series);
     let codes = transform_to_existing_keys(&index.codes(), &fetched.codes);
-    let saved = decks::save_new_deck(decks_dir, &fetched.name, &fetched.date, &codes)?;
+    let saved = decks::save_new_deck(decks_dir, &fetched.name, &fetched.date, "", &codes)?;
 
     Ok(build_deck(&index, &saved.name, &saved.date, &codes))
 }

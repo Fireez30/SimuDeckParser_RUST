@@ -11,16 +11,18 @@ use egui_material_icons::icons::{
 };
 use simu_deck_parser::builder::DeckList;
 use simu_deck_parser::codes::CardIndex;
-use simu_deck_parser::decks::{self, DeckFile};
+use simu_deck_parser::decks::{self, DeckFile, Sleeve};
 use simu_deck_parser::encore::{self, Account, SessionExpired, build_deck};
 use simu_deck_parser::model::{Deck, Serie};
 use simu_deck_parser::pdf::{self, Paper};
 
 use super::card_list::{CardList, Picker};
-use super::deck_editor::{DeckEditor, EditorAction};
+use super::card_view::CARD_RATIO;
+use super::deck_editor::{DeckEditor, EditorAction, sleeve_combo};
 use super::deck_preview::{DeckPreview, Summary};
 use super::theme::{self, scheme};
 use super::{Notice, Task};
+use crate::assets;
 
 type ImportResult = Result<(Deck, Vec<String>), String>;
 
@@ -91,6 +93,10 @@ pub struct DeckViewer {
     query: String,
     /// Codes of the picked deck that matched no card.
     missing: Vec<String>,
+    /// Sleeves of the simulator's `Sleeves` folder, for the pickers.
+    sleeves: Vec<Sleeve>,
+    /// Where the sleeves live; the list is read again whenever a deck is picked.
+    sleeves_dir: PathBuf,
     summary: Option<Summary>,
     preview: DeckPreview,
     import: Option<Import>,
@@ -286,9 +292,15 @@ impl DeckViewer {
         }
     }
 
+    /// Re-reads the sleeve images: they may have been added since the last time.
+    fn refresh_sleeves(&mut self) {
+        self.sleeves = decks::list_sleeves(&self.sleeves_dir);
+    }
+
     fn pick(&mut self, ctx: &egui::Context, path: PathBuf, series: &[Serie]) {
         ctx.forget_all_images();
         self.clear_selection();
+        self.refresh_sleeves();
         let Some(file) = self.decks.iter().find(|d| d.path == path) else {
             return;
         };
@@ -306,6 +318,15 @@ impl DeckViewer {
 
     fn open_editor(&mut self, series: &[Serie], start: Start) {
         let picked = self.picked.as_ref();
+        let sleeve = match (start, picked) {
+            (Start::Edit | Start::Duplicate, Some((path, _))) => self
+                .decks
+                .iter()
+                .find(|d| &d.path == path)
+                .map(|d| d.sleeve.clone())
+                .unwrap_or_default(),
+            _ => String::new(),
+        };
         let (name, target, list) = match (start, picked) {
             (Start::Edit, Some((path, deck))) => (
                 deck.name.clone(),
@@ -328,7 +349,16 @@ impl DeckViewer {
         if let Some((card, _)) = list.entries().first() {
             self.builder.open_serie_of(series, &card.key);
         }
-        self.editor = Some(DeckEditor::new(name, target, list, taken));
+        // Re-read the sleeves: images may have been added since the last time.
+        self.refresh_sleeves();
+        self.editor = Some(DeckEditor::new(
+            name,
+            target,
+            sleeve,
+            self.sleeves.clone(),
+            list,
+            taken,
+        ));
     }
 
     fn save_editor(&mut self, ctx: &egui::Context, series: &[Serie], decks_dir: &Path) {
@@ -337,9 +367,10 @@ impl DeckViewer {
         };
         let codes = editor.list.codes();
         let date = decks::now_date();
+        let sleeve = editor.sleeve.trim().to_string();
         let result = match &editor.target {
-            Some(path) => decks::update_deck(path, &editor.name, &date, &codes),
-            None => decks::save_new_deck(decks_dir, editor.name.trim(), &date, &codes),
+            Some(path) => decks::update_deck(path, &editor.name, &date, &sleeve, &codes),
+            None => decks::save_new_deck(decks_dir, editor.name.trim(), &date, &sleeve, &codes),
         };
         match result {
             Ok(saved) => {
@@ -416,11 +447,16 @@ impl DeckViewer {
         ui: &mut Ui,
         series: &Arc<Vec<Serie>>,
         decks_dir: &Path,
+        sleeves_dir: &Path,
         account: Option<&Account>,
         // The linked account's session is still being read: no upload yet, it would be
         // anonymous.
         account_pending: bool,
     ) {
+        if self.sleeves_dir != sleeves_dir {
+            self.sleeves_dir = sleeves_dir.to_path_buf();
+            self.refresh_sleeves();
+        }
         self.poll_import(decks_dir);
         self.poll_upload();
         self.poll_export();
@@ -489,7 +525,7 @@ impl DeckViewer {
                 top: 16,
                 bottom: 0,
             }))
-            .show(ui, |ui| self.deck_content(ui));
+            .show(ui, |ui| self.deck_content(ui, series, decks_dir));
         if let Some(start) = self.start.take() {
             match start {
                 Start::Upload => self.open_upload(),
@@ -598,7 +634,7 @@ impl DeckViewer {
         pick
     }
 
-    fn deck_content(&mut self, ui: &mut Ui) {
+    fn deck_content(&mut self, ui: &mut Ui, series: &Arc<Vec<Serie>>, decks_dir: &Path) {
         let s = scheme(ui);
         let (Some((_, deck)), Some(summary)) = (&self.picked, &self.summary) else {
             theme::empty_state(
@@ -614,7 +650,19 @@ impl DeckViewer {
             .decks
             .iter()
             .any(|d| d.ai && Some(&d.path) == self.picked.as_ref().map(|(p, _)| p));
+        let sleeve = self
+            .decks
+            .iter()
+            .find(|d| Some(&d.path) == self.picked.as_ref().map(|(p, _)| p))
+            .map(|d| d.sleeve.trim().to_string())
+            .unwrap_or_default();
+        let sleeve_path = self
+            .sleeves
+            .iter()
+            .find(|sl| sl.name.eq_ignore_ascii_case(&sleeve))
+            .map(|sl| sl.path.clone());
         let mut start = None;
+        let mut picked_sleeve = None;
         ScrollArea::vertical().auto_shrink(false).show(ui, |ui| {
             ui.add(egui::Label::new(theme::headline(&deck.name).color(s.on_surface)).wrap());
             if !deck.date.trim().is_empty() {
@@ -623,6 +671,42 @@ impl DeckViewer {
                         .color(s.on_surface_variant),
                 );
             }
+            // The deck's sleeve, changeable right here: the file is rewritten at once.
+            ui.horizontal(|ui| {
+                ui.label(
+                    RichText::new("Sleeve").small().color(s.on_surface_variant),
+                );
+                if let Some(path) = &sleeve_path {
+                    ui.add(
+                        assets::image_from_path(path)
+                            .fit_to_exact_size(vec2(16.0, 16.0 * CARD_RATIO))
+                            .corner_radius(CornerRadius::same(3)),
+                    );
+                }
+                let label = sleeve
+                    .strip_suffix(".jpg")
+                    .or_else(|| sleeve.strip_suffix(".jpeg"))
+                    .or_else(|| sleeve.strip_suffix(".png"))
+                    .unwrap_or(&sleeve);
+                let selected_text = if sleeve.is_empty() {
+                    "None".to_string()
+                } else {
+                    label.to_string()
+                };
+                if ai {
+                    ui.label(RichText::new(selected_text).color(s.on_surface_variant));
+                } else {
+                    sleeve_combo(
+                        ui,
+                        egui::Id::new("deck_page_sleeve"),
+                        200.0,
+                        &self.sleeves,
+                        &sleeve,
+                        &mut picked_sleeve,
+                    )
+                    .on_hover_text("The image the simulator puts the deck's cards in");
+                }
+            });
             ui.add_space(8.0);
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = vec2(8.0, 8.0);
@@ -660,6 +744,50 @@ impl DeckViewer {
         });
         if start.is_some() {
             self.start = start;
+        }
+        if let Some(sleeve) = picked_sleeve {
+            self.apply_sleeve(ui.ctx(), series, decks_dir, sleeve);
+        }
+    }
+
+    /// Writes the open deck's file with a new sleeve, keeping its name, date and cards.
+    fn apply_sleeve(
+        &mut self,
+        ctx: &egui::Context,
+        series: &Arc<Vec<Serie>>,
+        decks_dir: &Path,
+        sleeve: String,
+    ) {
+        let Some((path, _)) = &self.picked else {
+            return;
+        };
+        let Some(file) = self.decks.iter().find(|d| &d.path == path).cloned() else {
+            return;
+        };
+        let saved = decks::update_deck(&file.path, &file.name, &file.date, &sleeve, &file.codes);
+        match saved {
+            Ok(saved) => {
+                if let Err(e) = self.reload(decks_dir) {
+                    self.notice = Some(Notice::Error(
+                        "Could not read the simulator decks".into(),
+                        format!("{e:#}"),
+                    ));
+                    return;
+                }
+                self.pick(ctx, saved.path, series);
+                let what = if sleeve.is_empty() {
+                    "now has no sleeve".to_string()
+                } else {
+                    format!("uses the sleeve {sleeve}")
+                };
+                self.notice = Some(Notice::Info(format!("\"{}\" {what}.", file.name)));
+            }
+            Err(e) => {
+                self.notice = Some(Notice::Error(
+                    "Could not set the sleeve".into(),
+                    format!("{e:#}"),
+                ));
+            }
         }
     }
 

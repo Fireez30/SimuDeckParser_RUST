@@ -1006,11 +1006,14 @@ impl eframe::App for App {
                     }
                 }
                 Screen::Decks => {
-                    let decks = self.layout.as_ref().map(Layout::decks).unwrap_or_default();
+                    let layout = self.layout.as_ref();
+                    let decks = layout.map(Layout::decks).unwrap_or_default();
+                    let sleeves = layout.map(Layout::sleeves).unwrap_or_default();
                     self.deck_viewer.show(
                         ui,
                         &self.series,
                         &decks,
+                        &sleeves,
                         self.account.as_ref(),
                         self.account_form.restoring.is_some(),
                     );

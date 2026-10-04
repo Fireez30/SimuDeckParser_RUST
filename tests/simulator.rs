@@ -64,7 +64,7 @@ fn load_and_import_round_trip() {
         ["KS/W49-E001", "KS/W49-E099", "KS/W49-E002", "XX/Y1-001"]
     );
 
-    decks::save_new_deck(&layout.decks(), "Test", "10:00  01/01/2025", &codes).unwrap();
+    decks::save_new_deck(&layout.decks(), "Test", "10:00  01/01/2025", "", &codes).unwrap();
     let stored = decks::list_decks(&layout.decks()).unwrap();
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].codes, codes);
@@ -120,10 +120,11 @@ fn real_install() {
     for deck in decks::list_decks(&layout.decks()).unwrap() {
         let (built, missing) = build_deck(&index, &deck.name, &deck.date, &deck.codes);
         println!(
-            "deck {:?}{}: {} cards, missing {:?}",
+            "deck {:?}{}: {} cards, sleeve {:?}, missing {:?}",
             deck.name,
             if deck.ai { " (AI)" } else { "" },
             built.cards.len(),
+            deck.sleeve,
             missing
         );
     }

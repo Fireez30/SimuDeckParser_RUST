@@ -119,7 +119,14 @@ fn screenshots() {
                 "Standby control",
                 "AI_Axis",
             ] {
-                decks::save_new_deck(&sim.join("Decks"), name, "10:00  01/01/2025", &deck).unwrap();
+                decks::save_new_deck(
+                    &sim.join("Decks"),
+                    name,
+                    "10:00  01/01/2025",
+                    "",
+                    &deck,
+                )
+                .unwrap();
             }
             sim
         }

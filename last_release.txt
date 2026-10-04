@@ -35,9 +35,15 @@ Cards view :
 - Added traits 
 
 
-latest (0.1.1) : 
+0.1.1 : 
 
 Added a whole section that use encoredecks connection to list encore decks decks.
 - list of all decks paginated 
 - possibility to see a full encoredecks deck 
 - possibility to import a deck from your encore decks deck, not only by list
+
+latest (0.1.2) :
+
+- Added feature to bind sleeve to a deck. Use the simulator Sleeves folder
+- the sleeve filter can set or unset sleeve for both new or update decks 
+- added a name filter for sleeve filtering

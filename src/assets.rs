@@ -29,9 +29,14 @@ pub fn trigger_icon(t: Trigger) -> ImageSource<'static> {
 /// Card artwork, or the embedded placeholder.
 pub fn card_image(card: &simu_deck_parser::model::Card) -> egui::Image<'static> {
     match &card.image {
-        Some(path) => egui::Image::from_uri(file_uri(path)),
+        Some(path) => image_from_path(path),
         None => egui::Image::new(EMPTY_CARD),
     }
+}
+
+/// An image of the simulator's folders, e.g. a sleeve.
+pub fn image_from_path(path: &std::path::Path) -> egui::Image<'static> {
+    egui::Image::from_uri(file_uri(path))
 }
 
 /// `file:///home/me/x.jpg` on Linux, `file:///C:\\Games\\x.jpg` on Windows: egui reads
