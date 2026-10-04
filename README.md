@@ -169,18 +169,19 @@ The settings file contains :
 - Current theme
 
 ## Release note 
+latest (0.1.2) :
 
-Previous functionalities : 
-Cards : 
-- Card listing from the cards folder. 
-- Filtering by card type, card color, level , cost
-- Filtering by card text (effect, name or card code) 
-- Card panel on hover or click, with effect visible
+- Added feature to bind sleeve to a deck. Use the simulator Sleeves folder
+- the sleeve filter can set or unset sleeve for both new or update decks 
+- Added a name filter for sleeve filtering
+- Prepared for the move of Sleeves folder in the simulator
 
-Decks : 
-- Import from encoredecks, with automated matching (not perfect)
-- Deck list 
-- Deck stats (cards, types, level and colors) 
+0.1.1 : 
+
+Added a whole section that use encoredecks connection to list encore decks decks.
+- list of all decks paginated 
+- possibility to see a full encoredecks deck 
+- possibility to import a deck from your encore decks deck, not only by list
 
 0.1.0:
 Visuals :
@@ -206,20 +207,22 @@ Cards view :
 - Added a combo climax filter
 - Added traits 
 
+Previous functionalities : 
+Cards : 
+- Card listing from the cards folder. 
+- Filtering by card type, card color, level , cost
+- Filtering by card text (effect, name or card code) 
+- Card panel on hover or click, with effect visible
 
-0.1.1 : 
+Decks : 
+- Import from encoredecks, with automated matching (not perfect)
+- Deck list 
+- Deck stats (cards, types, level and colors) 
 
-Added a whole section that use encoredecks connection to list encore decks decks.
-- list of all decks paginated 
-- possibility to see a full encoredecks deck 
-- possibility to import a deck from your encore decks deck, not only by list
 
-latest (0.1.2) :
 
-- Added feature to bind sleeve to a deck. Use the simulator Sleeves folder
-- the sleeve filter can set or unset sleeve for both new or update decks 
-- Added a name filter for sleeve filtering
-- Prepared for the move of Sleeves folder in the simulator
+
+
 
 # Planned features
 
