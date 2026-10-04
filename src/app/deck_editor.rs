@@ -12,7 +12,7 @@ use simu_deck_parser::decks::Sleeve;
 use simu_deck_parser::model::{Card, CardType};
 
 use super::card_list::Picker;
-use super::card_view::{CARD_RATIO, card_preview};
+use super::card_view::CARD_RATIO;
 use super::theme::{self, scheme};
 use crate::assets;
 
@@ -216,19 +216,21 @@ impl DeckEditor {
         }
     }
 
-    /// The deck's cards by level (climaxes last), as rows or as a grid of pictures.
-    fn deck_cards(&mut self, ui: &mut Ui, grid: bool) {
+    /// The deck's cards by level (climaxes last), as rows or as a grid of pictures. Returns
+    /// the card under the pointer, for the detail pane.
+    fn deck_cards(&mut self, ui: &mut Ui, grid: bool) -> Option<Card> {
         let mut add = None;
         let mut remove = None;
+        let mut hovered = None;
         for (group, cards) in self.list.by_level() {
             ui.add_space(6.0);
             let count = cards.iter().map(|(_, n)| n).sum();
             theme::section_header(ui, &group.label(), Some(count));
             if grid {
-                card_grid(ui, &cards, &mut add, &mut remove);
+                card_grid(ui, &cards, &mut add, &mut remove, &mut hovered);
             } else {
                 for (card, copies) in &cards {
-                    card_row(ui, card, *copies, &mut add, &mut remove);
+                    card_row(ui, card, *copies, &mut add, &mut remove, &mut hovered);
                 }
             }
         }
@@ -250,6 +252,7 @@ impl DeckEditor {
         if let Some(card) = remove {
             Picker::remove(self, &card);
         }
+        hovered
     }
 }
 
@@ -435,6 +438,7 @@ fn card_row(
     copies: usize,
     add: &mut Option<Card>,
     remove: &mut Option<Card>,
+    hovered: &mut Option<Card>,
 ) {
     let s = scheme(ui);
     let row = ui.horizontal(|ui| {
@@ -470,7 +474,9 @@ fn card_row(
             }
         });
     });
-    row.response.on_hover_ui(|ui| card_preview(ui, card));
+    if row.response.hovered() {
+        *hovered = Some(card.clone());
+    }
 }
 
 /// Pictures with their copies: click adds a copy, right-click removes one.
@@ -479,6 +485,7 @@ fn card_grid(
     cards: &[(Card, usize)],
     add: &mut Option<Card>,
     remove: &mut Option<Card>,
+    hovered: &mut Option<Card>,
 ) {
     const GAP: f32 = 6.0;
     let width = ui.available_width();
@@ -503,9 +510,10 @@ fn card_grid(
                 );
             }
             theme::count_badge(ui, r.rect, *copies);
-            let r = r
-                .on_hover_cursor(egui::CursorIcon::PointingHand)
-                .on_hover_ui(|ui| card_preview(ui, card));
+            let r = r.on_hover_cursor(egui::CursorIcon::PointingHand);
+            if r.hovered() {
+                *hovered = Some(card.clone());
+            }
             if r.clicked() {
                 *add = Some(card.clone());
             }
@@ -538,7 +546,7 @@ impl Picker for DeckEditor {
         }
     }
 
-    fn side_panel(&mut self, ui: &mut Ui) {
+    fn side_panel(&mut self, ui: &mut Ui) -> Option<Card> {
         let s = scheme(ui);
         self.header(ui);
         self.sleeve_picker(ui);
@@ -580,6 +588,7 @@ impl Picker for DeckEditor {
         // Actions stay at the bottom; the card list scrolls above them.
         let actions_height = 56.0 + if self.error.is_some() { 40.0 } else { 0.0 };
         let list_height = (ui.available_height() - actions_height).max(80.0);
+        let mut hovered = None;
         ScrollArea::vertical()
             .auto_shrink(false)
             .max_height(list_height)
@@ -600,7 +609,7 @@ impl Picker for DeckEditor {
                         );
                     });
                 } else {
-                    self.deck_cards(ui, grid);
+                    hovered = self.deck_cards(ui, grid);
                 }
             });
 
@@ -635,6 +644,7 @@ impl Picker for DeckEditor {
                 }
             });
         });
+        hovered
     }
 }
 

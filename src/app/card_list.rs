@@ -9,7 +9,7 @@ use egui_material_icons::icons::{
 use simu_deck_parser::filters::{CARD_LIST_ORDER, Choice, Filters, sort_cards};
 use simu_deck_parser::model::{Card, Serie};
 
-use super::card_view::{self, CARD_RATIO, DetailPane, card_preview, card_summary, card_text};
+use super::card_view::{self, CARD_RATIO, DetailPane, card_summary, card_text};
 use super::theme::{self, scheme};
 use crate::assets;
 
@@ -23,8 +23,9 @@ pub trait Picker {
     fn copies(&self, card: &Card) -> usize;
     fn add(&mut self, card: &Card);
     fn remove(&mut self, card: &Card);
-    /// Right-hand panel (the deck being built), replacing the preview pane.
-    fn side_panel(&mut self, ui: &mut Ui);
+    /// Right-hand panel (the deck being built). Returns the card under the pointer there, for
+    /// the detail pane, which keeps showing it when the pointer leaves.
+    fn side_panel(&mut self, ui: &mut Ui) -> Option<Card>;
 }
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -174,6 +175,7 @@ impl CardList {
                 });
         }
 
+        let mut panel_hovered = None;
         if let Some(picker) = picker.as_deref_mut() {
             egui::Panel::right("card_list_deck")
                 .resizable(true)
@@ -189,14 +191,18 @@ impl CardList {
                 .show(ui, |ui| {
                     theme::surface_card(s.surface_container_low).show(ui, |ui| {
                         ui.set_min_height(ui.available_height());
-                        picker.side_panel(ui);
+                        panel_hovered = picker.side_panel(ui);
                     });
                 });
         }
-        // Grid view of the library; elsewhere (list view, deck builder) only for a card pinned
-        // from the related cards window.
+        if let Some(card) = &panel_hovered {
+            self.pane.hover(card);
+        }
+        // Grid view of the library; in list view only for a card pinned from the related
+        // cards window. The deck builder always shows it: it follows the pointer over the
+        // library and the deck and keeps the last card when the pointer leaves.
         let pane = (picker.is_none() && self.view == View::Grid)
-            || self.pane.pinned_key().is_some()
+            || picker.is_some()
             || card_view::pin_requested(ui.ctx());
         if pane {
             egui::Panel::right("card_list_detail")
@@ -576,10 +582,7 @@ impl CardList {
                             if copies > 0 {
                                 theme::count_badge(ui, r.rect, copies);
                             }
-                            let mut r = r.on_hover_cursor(egui::CursorIcon::PointingHand);
-                            if picker.is_some() {
-                                r = r.on_hover_ui(|ui| card_preview(ui, card));
-                            }
+                            let r = r.on_hover_cursor(egui::CursorIcon::PointingHand);
                             if r.hovered() {
                                 hovered = Some(card);
                             }
@@ -596,6 +599,9 @@ impl CardList {
         );
         match picker {
             Some(picker) => {
+                if let Some(card) = hovered {
+                    self.pane.hover(card);
+                }
                 if let Some(card) = clicked {
                     picker.add(card);
                 }
