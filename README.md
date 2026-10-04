@@ -72,6 +72,10 @@ The settings file contains :
 - What series should be opened by default (last before close)
 - Current theme
 
+Settings : 
+
+![Settings](documentation/images/settings.png "Settings")
+
 ## Any menu showing a card includes the following : 
 
 - Image
@@ -87,6 +91,10 @@ The settings file contains :
 - A related card button : this button opens a menu showing you all cards related to this card (card cited in the card text, or cards citing this card)
 - Effect
 
+
+Related cards panel: 
+
+![Related cards panel ](documentation/images/related_cards.png "Related cards")
 ## Cards
 
 Top row: 
@@ -94,10 +102,23 @@ Top row:
 - Search by name, card code or effect text with the search bar (`Ctrl+F`). The search applies within the active filters.
 - Right buttons in order : hide filter menu, toggle grid view, toggle list view with effect with effect.
 
+
+Card list : 
+
+![Cards](documentation/images/card_list.png "Card list")
+
 Filters menu on the left : 
 - Filter on : type, color, level, cost, only climax combos and traits. Nothing selected means no filter; the first chip you pick narrows the list, the next ones add to it. 
 - "Clear" resets everything.
 
+
+Card list, filtered by attributes : 
+
+![Card attributes filtering](documentation/images/card_list_filter.png "Filter by attributes")
+
+Card list, filtered by name / text / card code : 
+
+![Card name filtering](documentation/images/card_list_filter_name.png "Filter by name")
 ## Decks
 
 - Decks of the simulator's `Decks` folder are listed on the left (with a search field when there are many), the AI opponents' decks (`AI_*.txt`) in their own section. Click one to open it.
@@ -107,11 +128,26 @@ Filters menu on the left :
 - Edit page to add or remove cards to the deck.
 - Duplicate to create a copy of the deck. 
 - Upload will send the deck to encore decks. Either using your account if you set it up in the settings, or as anonymous (please don't spam this).
+- Proxies generate a printable proxy pdf
+- Translation generate a printable translations pdf
 - The deck page shows its size (with a warning when it is not 50 cards or has more than 8 climaxes), the type split, the triggers reparition,the level curve and the colors.
 - Than all card are shown , sorted by type first, than by level. 
 - Codes that matched no card are listed in a banner.
 - Hover / click cards to preview / pin them, as in the card view.
 
+List of decks :
+
+![Deck list](documentation/images/deck_list.png "List of decks")
+
+Proxies : 
+
+![Proxies PDF](documentation/images/proxies.png "Proxies")
+
+Translations : 
+
+![Proxies PDF](documentation/images/translation.png "Translations")
+
+## Decks
 
 ## Precisions on : Encore decks upload
 
@@ -131,6 +167,24 @@ The deck is created as a new public deck in your Encore Decks account when one i
 - On an open deck, "Edit" changes it in place (renaming the file if you rename the deck) and "Duplicate" starts a new deck from it. AI opponents' decks can only be duplicated. Codes that match no loaded card are kept when saving.
 - Leaving the builder, or closing the window, with unsaved changes asks for confirmation.
 
+Existing deck editor :
+
+![Existing deck editor](documentation/images/edit_deck.png "Editing existing deck ")
+
+New deck editor : 
+
+![New deck editor](documentation/images/new_deck.png "Editing new deck")
+
+
+Sleeve picker : 
+
+![Sleeves picker](documentation/images/sleeve_picker.png "Sleeves picker")
+
+Sleeve picker filtered: 
+
+![Sleeves picker filtered](documentation/images/sleeve_picker_filtered.png "Sleeves picker filtered")
+
+
 ## Encore decks import
 
 Click "Import" in the Decks screen and paste the deck link, e.g. " https://www.encoredecks.com/deck/PPyvcLuvt ". The dialog checks the link as you type; press Import (or Enter).
@@ -138,6 +192,10 @@ Click "Import" in the Decks screen and paste the deck link, e.g. " https://www.e
 The deck is saved as a new file in the simulator's `Decks` folder, in the simulator's format. Existing decks are never overwritten: if the name is taken, the new deck gets a " (2)" suffix.
 
 The import runs in the background; the new deck opens when it is done. If a card is not found, the tool searches for the equivalent card (JP or EN, foil or non foil). If a deck cannot be imported, please open an issue with the link of the deck.
+
+Import panel : 
+
+![Encore deck import](documentation/images/direct_encore_deck_import.png "Import from encoredeck list")
 
 ## Encore Decks account decks
 
@@ -167,6 +225,11 @@ The settings file contains :
 - What screen should be opened by default (last before close)
 - What series should be opened by default (last before close)
 - Current theme
+
+
+Settings : 
+
+![Settings](documentation/images/settings.png "Settings")
 
 ## Release note 
 latest (0.1.2) :
