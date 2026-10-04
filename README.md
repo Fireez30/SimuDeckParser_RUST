@@ -193,7 +193,11 @@ The deck is saved as a new file in the simulator's `Decks` folder, in the simula
 
 The import runs in the background; the new deck opens when it is done. If a card is not found, the tool searches for the equivalent card (JP or EN, foil or non foil). If a deck cannot be imported, please open an issue with the link of the deck.
 
-Import panel : 
+Import panel from link : 
+
+![Encore deck import link](documentation/images/import_from_link.png "Import from encoredeck link")
+
+Import from encoredeck list : 
 
 ![Encore deck import](documentation/images/direct_encore_deck_import.png "Import from encoredeck list")
 
