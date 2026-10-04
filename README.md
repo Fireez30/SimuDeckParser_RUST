@@ -194,7 +194,7 @@ Decks :
 - Added a new deck button, to build a new deck to be added to the simulator 
 - Added a button to duplicate a deck 
 - Added a button to upload a deck to encoredecks (upload as anonymous if not logged in, to your account if logged in settings)
-- Added a button to download a PDF with proxies of the deck²
+- Added a button to download a PDF with proxies of the deck
 - Added a button do download a PDF of deck translations
 - Added trigger count to deck stats 
 
