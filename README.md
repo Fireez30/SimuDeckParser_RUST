@@ -236,6 +236,12 @@ Settings :
 ![Settings](documentation/images/settings.png "Settings")
 
 ## Release note 
+
+Beta (0.1.3) : 
+
+- Fixed the card  panel during deck creation and edit so it doesn't disappear 
+- Added a add button on the card panel during creation and edit
+
 latest (0.1.2) :
 
 - Added feature to bind sleeve to a deck. Use the simulator Sleeves folder
