@@ -1,4 +1,7 @@
-//! Tiny `key:value` settings file at `~/.config/weiss_simulator_parser/settings.conf`.
+//! Tiny `key:value` settings file inside the OS-specific config folder,
+//! e.g. `%APPDATA%\weiss_simulator_parser\settings.conf` on Windows,
+//! `~/.config/weiss_simulator_parser/settings.conf` on Linux and
+//! `~/Library/Application Support/weiss_simulator_parser/settings.conf` on macOS.
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -76,6 +79,19 @@ impl Settings {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn default_path_is_in_os_config_dir() {
+        // Never hardcode `~/.config`: Windows expects %APPDATA%, macOS expects
+        // ~/Library/Application Support.
+        let settings = Settings::open_default();
+        let path = settings.path();
+        let expected = Path::new("weiss_simulator_parser").join("settings.conf");
+        assert!(path.ends_with(&expected), "unexpected path: {path:?}");
+        if let Some(cfg) = dirs::config_dir() {
+            assert_eq!(path.parent(), Some(cfg.join("weiss_simulator_parser").as_path()));
+        }
+    }
 
     #[test]
     fn round_trip() {
