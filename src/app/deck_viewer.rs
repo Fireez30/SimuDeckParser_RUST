@@ -513,7 +513,7 @@ impl DeckViewer {
                 .show(ui, |ui| {
                     theme::surface_card(s.surface_container_low).show(ui, |ui| {
                         ui.set_min_height(ui.available_height());
-                        self.preview.pane().show(ui);
+                        self.preview.pane().show(ui, None);
                     });
                 });
         }

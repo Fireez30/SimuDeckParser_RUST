@@ -4,7 +4,8 @@ use std::sync::Arc;
 
 use egui::{CornerRadius, Image, Margin, RichText, ScrollArea, Sense, Ui, vec2};
 use egui_material_icons::icons::{
-    ICON_ALARM, ICON_CONTENT_COPY, ICON_HUB, ICON_KEEP, ICON_KEEP_OFF, ICON_STYLE, ICON_TOUCH_APP,
+    ICON_ADD, ICON_ALARM, ICON_CONTENT_COPY, ICON_HUB, ICON_KEEP, ICON_KEEP_OFF, ICON_REMOVE,
+    ICON_STYLE, ICON_TOUCH_APP,
 };
 use simu_deck_parser::codes::NameIndex;
 use simu_deck_parser::model::{Card, CardType};
@@ -12,6 +13,7 @@ use simu_deck_parser::text::{
     KEYWORDS, Rich, parse_rich, split_names, sprite_cost, sprite_trigger, sprite_word,
 };
 
+use super::card_list::Picker;
 use super::theme::{self, scheme};
 use crate::assets;
 
@@ -584,6 +586,7 @@ fn effect_text(ui: &mut Ui, card: &Card, links: bool) {
 }
 
 /// Side pane showing the hovered card, or the pinned one (click pins, Esc or the pin button unpins).
+/// While building a deck, `picker` turns it into a card panel that also adds and removes copies.
 #[derive(Default)]
 pub struct DetailPane {
     card: Option<Card>,
@@ -618,7 +621,13 @@ impl DetailPane {
         }
     }
 
-    pub fn show(&mut self, ui: &mut Ui) {
+    /// The picker's object lifetime is its own (`'o`), not the reference's: reborrowing a
+    /// `&mut dyn Picker` through a closure must not borrow it for the object's whole lifetime.
+    pub fn show<'o>(
+        &mut self,
+        ui: &mut Ui,
+        mut picker: Option<&mut (dyn Picker + 'o)>,
+    ) {
         if ui.input(|i| i.key_pressed(egui::Key::Escape)) {
             self.pinned = false;
         }
@@ -645,7 +654,11 @@ impl DetailPane {
                 ui,
                 ICON_TOUCH_APP,
                 "No card selected",
-                "Hover a card to preview it.\nClick to pin it here.",
+                if picker.is_some() {
+                    "Hover a card to preview it.\nAdd or remove copies from here."
+                } else {
+                    "Hover a card to preview it.\nClick to pin it here."
+                },
             );
             return;
         };
@@ -678,8 +691,30 @@ impl DetailPane {
             ui.add_space(12.0);
             card_summary(ui, card);
             ui.add_space(8.0);
+            if let Some(picker) = picker.as_deref_mut() {
+                pick_buttons(ui, picker, card);
+            }
+            ui.add_space(8.0);
             related_button(ui, card);
             card_text(ui, card);
         });
     }
+}
+
+/// "Add" / "Remove" buttons while building a deck: the detail pane and the list view.
+pub fn pick_buttons(ui: &mut Ui, picker: &mut dyn Picker, card: &Card) {
+    ui.horizontal(|ui| {
+        if theme::tonal(Some(ICON_ADD), "Add").show(ui).clicked() {
+            picker.add(card);
+        }
+        let copies = picker.copies(card);
+        if copies > 0 {
+            if theme::text(Some(ICON_REMOVE), "Remove").show(ui).clicked() {
+                picker.remove(card);
+            }
+            ui.label(
+                theme::label(format!("×{copies} in deck")).color(scheme(ui).primary),
+            );
+        }
+    });
 }

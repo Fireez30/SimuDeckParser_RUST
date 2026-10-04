@@ -293,7 +293,7 @@ impl EncorePage {
                 .show(ui, |ui| {
                     theme::surface_card(s.surface_container_low).show(ui, |ui| {
                         ui.set_min_height(ui.available_height());
-                        self.pane.pane().show(ui);
+                        self.pane.pane().show(ui, None);
                     });
                 });
         }

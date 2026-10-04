@@ -3,13 +3,15 @@
 
 use egui::{CornerRadius, Margin, ScrollArea, Sense, Stroke, Ui, vec2};
 use egui_material_icons::icons::{
-    ICON_ADD, ICON_FILTER_LIST, ICON_FILTER_LIST_OFF, ICON_GRID_VIEW, ICON_REMOVE, ICON_SEARCH_OFF,
-    ICON_STYLE, ICON_VIEW_LIST,
+    ICON_FILTER_LIST, ICON_FILTER_LIST_OFF, ICON_GRID_VIEW, ICON_SEARCH_OFF, ICON_STYLE,
+    ICON_VIEW_LIST,
 };
 use simu_deck_parser::filters::{CARD_LIST_ORDER, Choice, Filters, sort_cards};
 use simu_deck_parser::model::{Card, Serie};
 
-use super::card_view::{self, CARD_RATIO, DetailPane, card_summary, card_text};
+use super::card_view::{
+    self, CARD_RATIO, DetailPane, card_summary, card_text, pick_buttons,
+};
 use super::theme::{self, scheme};
 use crate::assets;
 
@@ -219,7 +221,7 @@ impl CardList {
                 .show(ui, |ui| {
                     theme::surface_card(s.surface_container_low).show(ui, |ui| {
                         ui.set_min_height(ui.available_height());
-                        self.pane.show(ui);
+                        self.pane.show(ui, picker.as_deref_mut());
                     });
                 });
         }
@@ -675,20 +677,4 @@ impl CardList {
             },
         );
     }
-}
-
-/// "Add" / "Remove" buttons of the list view while building a deck.
-fn pick_buttons(ui: &mut Ui, picker: &mut dyn Picker, card: &Card) {
-    ui.horizontal(|ui| {
-        if theme::tonal(Some(ICON_ADD), "Add").show(ui).clicked() {
-            picker.add(card);
-        }
-        let copies = picker.copies(card);
-        if copies > 0 {
-            if theme::text(Some(ICON_REMOVE), "Remove").show(ui).clicked() {
-                picker.remove(card);
-            }
-            ui.label(theme::label(format!("×{copies} in deck")).color(scheme(ui).primary));
-        }
-    });
 }
