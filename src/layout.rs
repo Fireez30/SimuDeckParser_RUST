@@ -74,9 +74,7 @@ impl Layout {
 
     /// Sleeve images the simulator offers; may not exist.
     pub fn sleeves(&self) -> PathBuf {
-        self.streaming_assets()
-            .unwrap_or_else(|| self.root.clone())
-            .join("Sleeves")
+        self.root.join("Sleeves")
     }
 }
 
