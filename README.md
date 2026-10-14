@@ -163,6 +163,7 @@ The deck is created as a new public deck in your Encore Decks account when one i
 - The deck panel groups cards by level (characters and events together), with climaxes last, and switches between a list (with −/+ buttons) and a grid of pictures (click adds a copy, right-click removes one).
 - The builder follows the deck rules: at most 50 cards and 4 copies of cards sharing a name. It shows the card count and warns above 8 climaxes.
 - You can specify sleeves before saving, or let no sleeves (default behaviour).
+- New sleeves can be added from the sleeve picker (here and on an open deck): under "Add a sleeve", paste the path or the link of a JPEG or PNG image, optionally name it, and press Add. The image is copied into the simulator's `Sleeves` folder (never overwriting an existing sleeve) and picked for the deck.
 - Name the deck and press Save: it is written to the simulator's `Decks` folder (a taken name gets a " (2)" suffix). A deck can be saved before it reaches 50 cards.
 - On an open deck, "Edit" changes it in place (renaming the file if you rename the deck) and "Duplicate" starts a new deck from it. AI opponents' decks can only be duplicated. Codes that match no loaded card are kept when saving.
 - Leaving the builder, or closing the window, with unsaved changes asks for confirmation.
@@ -237,7 +238,11 @@ Settings :
 
 ## Release note 
 
-latest (0.1.3) : 
+beta (0.1.4) :
+
+- Added a feature to upload your own sleeve when editing or creating a deck (PNG or JPEG format)
+
+0.1.3 : 
 
 - Fixed the card  panel during deck creation and edit so it doesn't disappear 
 - Added a add button on the card panel during creation and edit

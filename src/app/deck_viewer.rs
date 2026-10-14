@@ -18,7 +18,7 @@ use simu_deck_parser::pdf::{self, Paper};
 
 use super::card_list::{CardList, Picker};
 use super::card_view::CARD_RATIO;
-use super::deck_editor::{DeckEditor, EditorAction, sleeve_combo};
+use super::deck_editor::{DeckEditor, EditorAction, SleeveAdder, sleeve_combo};
 use super::deck_preview::{DeckPreview, Summary};
 use super::theme::{self, scheme};
 use super::{Notice, Task};
@@ -97,6 +97,8 @@ pub struct DeckViewer {
     sleeves: Vec<Sleeve>,
     /// Where the sleeves live; the list is read again whenever a deck is picked.
     sleeves_dir: PathBuf,
+    /// Adding a sleeve image from the open deck's sleeve picker.
+    sleeve_adder: SleeveAdder,
     summary: Option<Summary>,
     preview: DeckPreview,
     import: Option<Import>,
@@ -349,13 +351,11 @@ impl DeckViewer {
         if let Some((card, _)) = list.entries().first() {
             self.builder.open_serie_of(series, &card.key);
         }
-        // Re-read the sleeves: images may have been added since the last time.
-        self.refresh_sleeves();
         self.editor = Some(DeckEditor::new(
             name,
             target,
             sleeve,
-            self.sleeves.clone(),
+            self.sleeves_dir.clone(),
             list,
             taken,
         ));
@@ -455,6 +455,7 @@ impl DeckViewer {
     ) {
         if self.sleeves_dir != sleeves_dir {
             self.sleeves_dir = sleeves_dir.to_path_buf();
+            self.sleeve_adder.dir = sleeves_dir.to_path_buf();
             self.refresh_sleeves();
         }
         self.poll_import(decks_dir);
@@ -703,6 +704,7 @@ impl DeckViewer {
                         &self.sleeves,
                         &sleeve,
                         &mut picked_sleeve,
+                        &mut self.sleeve_adder,
                     )
                     .on_hover_text("The image the simulator puts the deck's cards in");
                 }

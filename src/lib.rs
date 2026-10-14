@@ -12,4 +12,5 @@ pub mod model;
 pub mod parser;
 pub mod pdf;
 pub mod settings;
+pub mod sleeves;
 pub mod text;

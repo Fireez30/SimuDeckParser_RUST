@@ -8,12 +8,14 @@ use egui_material_icons::icons::{
     ICON_VIEW_LIST, ICON_WARNING,
 };
 use simu_deck_parser::builder::{DECK_SIZE, DeckList, MAX_CLIMAXES};
-use simu_deck_parser::decks::Sleeve;
+use simu_deck_parser::decks::{self, Sleeve};
+use simu_deck_parser::sleeves::{SleeveSource, add_sleeve};
 use simu_deck_parser::model::{Card, CardType};
 
 use super::card_list::Picker;
 use super::card_view::CARD_RATIO;
 use super::theme::{self, scheme};
+use super::Task;
 use crate::assets;
 
 /// Width the sleeve picker wraps its thumbnails at.
@@ -37,6 +39,9 @@ pub struct DeckEditor {
     pub sleeve: String,
     /// Sleeves the simulator offers, for the picker.
     sleeves: Vec<Sleeve>,
+    /// The simulator's `Sleeves` folder, read again when a sleeve is added.
+    sleeves_dir: PathBuf,
+    sleeve_adder: SleeveAdder,
     pub list: DeckList,
     /// Names of the other decks, to warn about duplicates.
     taken_names: Vec<String>,
@@ -55,7 +60,7 @@ impl DeckEditor {
         name: String,
         target: Option<PathBuf>,
         sleeve: String,
-        sleeves: Vec<Sleeve>,
+        sleeves_dir: PathBuf,
         list: DeckList,
         taken_names: Vec<String>,
     ) -> Self {
@@ -64,7 +69,12 @@ impl DeckEditor {
             name,
             target,
             sleeve,
-            sleeves,
+            sleeves: decks::list_sleeves(&sleeves_dir),
+            sleeve_adder: SleeveAdder {
+                dir: sleeves_dir.clone(),
+                ..SleeveAdder::default()
+            },
+            sleeves_dir,
             list,
             taken_names,
             dirty: false,
@@ -122,9 +132,12 @@ impl DeckEditor {
                 &self.sleeves,
                 &self.sleeve,
                 &mut picked,
+                &mut self.sleeve_adder,
             );
         });
         if let Some(sleeve) = picked {
+            // The pick may be a sleeve just added to the folder.
+            self.sleeves = decks::list_sleeves(&self.sleeves_dir);
             self.sleeve = sleeve;
             self.dirty = true;
         }
@@ -277,7 +290,8 @@ fn sleeve_grid(
             .hint_text("Find a sleeve")
             .desired_width(f32::INFINITY),
     );
-    if !edit.has_focus() && query.is_empty() {
+    // Typing goes to the filter, unless the user is in another field (adding a sleeve).
+    if !edit.has_focus() && query.is_empty() && ui.memory(|m| m.focused().is_none()) {
         edit.request_focus();
     }
     ui.data_mut(|d| d.insert_temp(query_id, query.clone()));
@@ -326,8 +340,100 @@ fn sleeve_grid(
     });
 }
 
+/// Adding an image to the simulator's `Sleeves` folder from a path or a link, in the
+/// sleeve popup. The copy or download runs on a background thread.
+#[derive(Default)]
+pub(super) struct SleeveAdder {
+    /// The simulator's `Sleeves` folder, where the image is copied.
+    pub dir: PathBuf,
+    /// Path or link to the image, as typed.
+    source: String,
+    /// Name for the new sleeve; empty, the image's file name.
+    name: String,
+    task: Option<Task<Result<Sleeve, String>>>,
+    error: Option<String>,
+}
+
+impl SleeveAdder {
+    /// Sets `picked` to the new sleeve once it is in the folder.
+    fn poll(&mut self, picked: &mut Option<String>) {
+        let Some(result) = self.task.as_ref().and_then(Task::poll) else {
+            return;
+        };
+        self.task = None;
+        match result {
+            Some(Ok(sleeve)) => {
+                self.source.clear();
+                self.name.clear();
+                self.error = None;
+                *picked = Some(sleeve.name);
+            }
+            Some(Err(e)) => self.error = Some(e),
+            None => self.error = Some("The sleeve could not be added.".into()),
+        }
+    }
+
+    fn start(&mut self, ctx: &egui::Context) {
+        let Some(source) = SleeveSource::parse(&self.source) else {
+            return;
+        };
+        if self.dir.as_os_str().is_empty() {
+            self.error = Some("The simulator folder is not set.".into());
+            return;
+        }
+        self.error = None;
+        let dir = self.dir.clone();
+        let name = self.name.trim().to_string();
+        self.task = Some(Task::spawn(ctx, move || {
+            add_sleeve(&dir, &source, &name).map_err(|e| format!("{e:#}"))
+        }));
+    }
+
+    /// The fields and button under the sleeve grid.
+    fn show(&mut self, ui: &mut Ui) {
+        let s = scheme(ui);
+        let running = self.task.is_some();
+        ui.separator();
+        ui.label(theme::label("Add a sleeve").color(s.on_surface_variant));
+        let source = ui.add_enabled(
+            !running,
+            egui::TextEdit::singleline(&mut self.source)
+                .hint_text("Image path or link (JPEG or PNG)")
+                .desired_width(f32::INFINITY),
+        );
+        let valid = SleeveSource::parse(&self.source).is_some();
+        ui.horizontal(|ui| {
+            let button_width = 90.0;
+            let name = ui.add_enabled(
+                !running,
+                egui::TextEdit::singleline(&mut self.name)
+                    .hint_text("Name (optional)")
+                    .desired_width(ui.available_width() - button_width - 8.0),
+            );
+            let entered = (source.lost_focus() || name.lost_focus())
+                && ui.input(|i| i.key_pressed(egui::Key::Enter));
+            if running {
+                ui.spinner();
+                ui.label(RichText::new("Adding…").color(s.on_surface_variant));
+            } else {
+                let add = theme::tonal(Some(ICON_ADD), "Add")
+                    .enabled(valid)
+                    .show(ui)
+                    .on_hover_text("Copy the image into the simulator's Sleeves folder");
+                if valid && (add.clicked() || entered) {
+                    self.start(ui.ctx());
+                }
+            }
+        });
+        if let Some(error) = &self.error {
+            ui.label(theme::body_small(error).color(s.error));
+        }
+    }
+}
+
 /// A combo box for the deck's sleeve: a button that opens the popup with
-/// [`sleeve_grid`]. Sets `picked` to the chosen sleeve file name, empty for none.
+/// [`sleeve_grid`] and the `adder` of new sleeves. Sets `picked` to the
+/// chosen sleeve file name, empty for none, or to the new sleeve once it is added.
 ///
 /// Not an `egui::ComboBox`: its popup, once shrunk by a filter, never grows back,
 /// while this one returns to its full height when the filter is cleared.
@@ -338,7 +444,9 @@ pub(super) fn sleeve_combo(
     sleeves: &[Sleeve],
     current: &str,
     picked: &mut Option<String>,
+    adder: &mut SleeveAdder,
 ) -> egui::Response {
+    adder.poll(picked);
     let label = if sleeves.is_empty() {
         "No sleeves found".to_string()
     } else if current.trim().is_empty() {
@@ -349,12 +457,14 @@ pub(super) fn sleeve_combo(
     let button = egui::Button::new(format!("{label} \u{25be}"))
         .wrap_mode(egui::TextWrapMode::Truncate)
         .min_size(vec2(width, 0.0));
-    let response = ui.add_enabled(!sleeves.is_empty(), button);
+    // Enabled even without sleeves: the popup is where the first one is added.
+    let response = ui.add(button);
     let shown = egui::Popup::from_toggle_button_response(&response)
         .id(id.with("sleeve_popup"))
         .close_behavior(egui::PopupCloseBehavior::CloseOnClickOutside)
         .show(|ui| {
             sleeve_grid(ui, id, sleeves, current, picked);
+            adder.show(ui);
         });
     if shown.is_none() {
         clear_sleeve_query(ui.ctx(), id);
@@ -651,7 +761,7 @@ impl Picker for DeckEditor {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use egui_kittest::kittest::Queryable;
+    use egui_kittest::kittest::{NodeT, Queryable};
 
     fn fake_sleeves(n: usize) -> Vec<Sleeve> {
         (0..n)
@@ -824,5 +934,74 @@ mod tests {
             (first - last).abs() < 2.0,
             "the popup must not resize while it is open: {first} vs {last}"
         );
+    }
+    /// From the combo's popup, an image path is copied into the sleeves folder and the new
+    /// sleeve picked, even when the folder has no sleeve yet.
+    #[test]
+    fn sleeve_combo_adds_a_sleeve_from_a_path() {
+        use std::cell::RefCell;
+
+        let dir = tempfile::tempdir().unwrap();
+        let image = dir.path().join("My Rem.png");
+        image::RgbImage::new(2, 3).save(&image).unwrap();
+        let sleeves_dir = dir.path().join("Sleeves");
+
+        let picked: RefCell<Option<String>> = RefCell::new(None);
+        // Drawn once the app's fonts are installed: the labels use them.
+        let ready = std::cell::Cell::new(false);
+        let adder = RefCell::new(SleeveAdder {
+            dir: sleeves_dir.clone(),
+            ..SleeveAdder::default()
+        });
+        let mut harness = egui_kittest::Harness::builder()
+            .with_size(egui::vec2(600.0, 900.0))
+            .build_ui(|ui| {
+                let mut picked = picked.borrow_mut();
+                if ready.get() && picked.is_none() {
+                    sleeve_combo(
+                        ui,
+                        egui::Id::new("add_test"),
+                        200.0,
+                        &[],
+                        "",
+                        &mut picked,
+                        &mut adder.borrow_mut(),
+                    );
+                }
+            });
+        super::theme::install(&harness.ctx);
+        harness.run_steps(1);
+        ready.set(true);
+        harness.run_steps(2);
+        harness.get_by_label("No sleeves found \u{25be}").click();
+        harness.run_steps(2);
+        // The fields of the popup: the sleeve filter, then the image's path and its name.
+        let fields: Vec<_> = harness
+            .get_all_by_role(egui::accesskit::Role::TextInput)
+            .collect();
+        assert_eq!(fields.len(), 3);
+        fields[1].click();
+        harness.run_steps(1);
+        let fields: Vec<_> = harness
+            .get_all_by_role(egui::accesskit::Role::TextInput)
+            .collect();
+        fields[1].type_text(&image.display().to_string());
+        harness.run_steps(2);
+        harness
+            .get_all_by_label_contains("Add")
+            .find(|n| n.accesskit_node().role() == egui::accesskit::Role::Button)
+            .expect("no Add button")
+            .click();
+        for _ in 0..50 {
+            harness.run_steps(1);
+            if picked.borrow().is_some() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+
+        assert_eq!(picked.borrow().as_deref(), Some("My Rem.png"));
+        assert!(sleeves_dir.join("My Rem.png").is_file());
+        assert!(adder.borrow().error.is_none());
     }
 }
