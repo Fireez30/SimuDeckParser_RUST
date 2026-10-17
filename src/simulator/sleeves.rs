@@ -1,7 +1,9 @@
-//! Adding sleeve images to the simulator's `Sleeves` folder, from a file on disk or a link.
+//! Sleeves: the card-back images of the simulator's `Sleeves` folder. A deck file names the
+//! one it uses (see [`super::deck_files`]).
 //!
-//! The image is checked (it must be a JPEG or PNG the simulator can show) and copied under
-//! a free name, never overwriting a sleeve that is already there.
+//! Users can add their own from a file on disk or a link: the image is checked (it must be a
+//! JPEG or PNG the simulator can show) and copied under a free name, never overwriting a
+//! sleeve that is already there.
 
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -9,12 +11,56 @@ use std::path::{Path, PathBuf};
 use anyhow::{Context, Result, anyhow, bail};
 use image::ImageFormat;
 
-use crate::decks::{Sleeve, file_stem_for};
+use super::deck_files::file_stem_for;
+use crate::text::percent_decode;
 
 /// Largest image accepted, so a wrong link does not fill the disk.
 const MAX_IMAGE_BYTES: u64 = 25 * 1024 * 1024;
 /// Name of a sleeve whose source tells nothing useful.
 const FALLBACK_NAME: &str = "Sleeve";
+
+/// A sleeve image of the simulator's `Sleeves` folder.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Sleeve {
+    /// File name, as deck files refer to it: `RZ Emilia 1.jpg`.
+    pub name: String,
+    pub path: PathBuf,
+}
+
+impl Sleeve {
+    /// The name shown to users: the file name without its extension.
+    pub fn display_name(file_name: &str) -> &str {
+        [".jpg", ".jpeg", ".png"]
+            .iter()
+            .find_map(|extension| file_name.strip_suffix(extension))
+            .unwrap_or(file_name)
+    }
+}
+
+/// Every sleeve image in `dir`, sorted by name (a missing folder has no sleeves).
+pub fn list_sleeves(dir: &Path) -> Vec<Sleeve> {
+    const IMAGE_EXTENSIONS: [&str; 3] = ["jpg", "jpeg", "png"];
+    let Ok(entries) = fs::read_dir(dir) else {
+        return Vec::new();
+    };
+    let mut sleeves: Vec<Sleeve> = entries
+        .flatten()
+        .map(|e| e.path())
+        .filter(|p| {
+            p.is_file()
+                && p.extension()
+                    .is_some_and(|x| IMAGE_EXTENSIONS.iter().any(|e| x.eq_ignore_ascii_case(e)))
+        })
+        .filter_map(|p| {
+            Some(Sleeve {
+                name: p.file_name()?.to_string_lossy().into_owned(),
+                path: p,
+            })
+        })
+        .collect();
+    sleeves.sort_by_key(|sleeve| sleeve.name.to_lowercase());
+    sleeves
+}
 
 /// Where a sleeve image comes from, as the user typed it.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -82,7 +128,10 @@ impl SleeveSource {
                     bail!("{} is not a file", path.display());
                 }
                 if meta.len() > MAX_IMAGE_BYTES {
-                    bail!("the image is larger than {} MB", MAX_IMAGE_BYTES / 1024 / 1024);
+                    bail!(
+                        "the image is larger than {} MB",
+                        MAX_IMAGE_BYTES / 1024 / 1024
+                    );
                 }
                 fs::read(path).with_context(|| format!("reading {}", path.display()))
             }
@@ -128,15 +177,18 @@ pub fn add_sleeve(dir: &Path, source: &SleeveSource, name: &str) -> Result<Sleev
 
 /// `jpg` or `png` for an image the simulator can show; an error for anything else.
 fn image_extension(bytes: &[u8]) -> Result<&'static str> {
-    let format = image::guess_format(bytes).map_err(|_| {
-        anyhow!("this is not an image (a web page instead of the picture itself?)")
-    })?;
+    let format = image::guess_format(bytes)
+        .map_err(|_| anyhow!("this is not an image (a web page instead of the picture itself?)"))?;
     let extension = match format {
         ImageFormat::Jpeg => "jpg",
         ImageFormat::Png => "png",
         other => bail!(
             "{} images are not supported: use a JPEG or PNG",
-            other.extensions_str().first().unwrap_or(&"these").to_uppercase()
+            other
+                .extensions_str()
+                .first()
+                .unwrap_or(&"these")
+                .to_uppercase()
         ),
     };
     image::load_from_memory_with_format(bytes, format)
@@ -167,27 +219,6 @@ fn free_path(dir: &Path, stem: &str, extension: &str) -> PathBuf {
     dir.join(format!("{candidate}.{extension}"))
 }
 
-/// `%20` and the like decoded; invalid escapes are kept as they are.
-fn percent_decode(text: &str) -> String {
-    let bytes = text.as_bytes();
-    let mut out = Vec::with_capacity(bytes.len());
-    let mut i = 0;
-    while i < bytes.len() {
-        if bytes[i] == b'%'
-            && let Some(byte) = text
-                .get(i + 1..i + 3)
-                .and_then(|h| u8::from_str_radix(h, 16).ok())
-        {
-            out.push(byte);
-            i += 3;
-        } else {
-            out.push(bytes[i]);
-            i += 1;
-        }
-    }
-    String::from_utf8_lossy(&out).into_owned()
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -198,6 +229,32 @@ mod tests {
             .write_to(&mut std::io::Cursor::new(&mut bytes), ImageFormat::Png)
             .unwrap();
         bytes
+    }
+
+    #[test]
+    fn sleeves_of_a_folder() {
+        let dir = tempfile::tempdir().unwrap();
+        assert!(list_sleeves(dir.path()).is_empty());
+
+        let sleeves = dir.path().join("Sleeves");
+        fs::create_dir_all(&sleeves).unwrap();
+        fs::write(sleeves.join("B sleeve.jpg"), "").unwrap();
+        fs::write(sleeves.join("a sleeve.png"), "").unwrap();
+        fs::write(sleeves.join("ignored.txt"), "").unwrap();
+
+        let listed = list_sleeves(&sleeves);
+        assert_eq!(
+            listed.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
+            ["a sleeve.png", "B sleeve.jpg"]
+        );
+        assert!(listed[0].path.ends_with("a sleeve.png"));
+    }
+
+    #[test]
+    fn display_names() {
+        assert_eq!(Sleeve::display_name("RZ Emilia 1.jpg"), "RZ Emilia 1");
+        assert_eq!(Sleeve::display_name("a.png"), "a");
+        assert_eq!(Sleeve::display_name("no extension"), "no extension");
     }
 
     #[test]
@@ -227,7 +284,10 @@ mod tests {
         assert_eq!(url("https://x.org/img/RZ%20Rem.jpg?w=200#top"), "RZ Rem");
         assert_eq!(url("https://x.org"), "");
         assert_eq!(url("https://x.org/"), "");
-        assert_eq!(SleeveSource::File("/a/b/Emilia.png".into()).stem(), "Emilia");
+        assert_eq!(
+            SleeveSource::File("/a/b/Emilia.png".into()).stem(),
+            "Emilia"
+        );
     }
 
     #[test]
@@ -244,13 +304,19 @@ mod tests {
 
         // Never overwrites, whatever the case of the taken name.
         fs::write(sleeves.join("rem (2).JPG"), "").unwrap();
-        assert_eq!(add_sleeve(&sleeves, &source, "").unwrap().name, "Rem (3).png");
+        assert_eq!(
+            add_sleeve(&sleeves, &source, "").unwrap().name,
+            "Rem (3).png"
+        );
 
         assert_eq!(
             add_sleeve(&sleeves, &source, "Re:Zero / Rem").unwrap().name,
             "Re-Zero - Rem.png"
         );
-        assert_eq!(add_sleeve(&sleeves, &source, " . ").unwrap().name, "Sleeve.png");
+        assert_eq!(
+            add_sleeve(&sleeves, &source, " . ").unwrap().name,
+            "Sleeve.png"
+        );
     }
 
     #[test]
@@ -276,6 +342,6 @@ mod tests {
         assert!(add_sleeve(&sleeves, &SleeveSource::File(truncated), "").is_err());
 
         // Nothing was written.
-        assert!(crate::decks::list_sleeves(&sleeves).is_empty());
+        assert!(list_sleeves(&sleeves).is_empty());
     }
 }

@@ -15,14 +15,14 @@
 use std::collections::BTreeMap;
 use std::path::Path;
 
-use super::effects::CommonEffects;
-use crate::codes::{ImageDir, resolve_card_image};
+use super::card_images::{ImageDir, resolve_card_image};
+use super::common_effects::CommonEffects;
 use crate::model::{Card, CardType, Color, Trigger};
 use crate::text::decode_text;
 
 const MAX_TRAITS: usize = 3;
 
-/// Card under construction; reset after every `EndCard`.
+/// The card being read: filled line by line, turned into a [`Card`] at `EndCard`.
 struct Draft {
     key: String,
     card_type: CardType,
@@ -71,6 +71,7 @@ impl Draft {
         }
     }
 
+    /// `Clone <code>`: starts from every field of another card (foils, reprints).
     fn clone_from_card(&mut self, c: &Card) {
         self.card_type = c.card_type;
         self.name = c.name.clone();
@@ -187,6 +188,8 @@ fn expand_effect(reference: &str, effects: &CommonEffects) -> String {
     reference.trim().to_string()
 }
 
+/// Reads the content of a card file. Artwork is looked up in `set_path`, then in
+/// `alternate_artwork`.
 pub fn parse_card_data(
     content: &str,
     set_path: &Path,
@@ -210,8 +213,8 @@ pub fn parse_card_data(
     .0
 }
 
-/// One parse of a card file. `known` resolves clones of cards defined later in the file.
-/// Also returns whether a clone source was missing.
+/// One pass over a card file. `known` holds the cards of a previous pass, to resolve clones of
+/// cards defined further down the file. Also returns whether some clone source was missing.
 fn parse_pass(
     content: &str,
     set_images: &ImageDir,
@@ -255,7 +258,13 @@ fn parse_pass(
             parse_into(&mut d.level, rest, "level", &d.key);
         } else if let Some(rest) = line.strip_prefix("Clone ") {
             let source = rest.trim();
-            match cards.get(source).or_else(|| known?.get(source)) {
+            let mut found = cards.get(source);
+            if found.is_none()
+                && let Some(known) = known
+            {
+                found = known.get(source);
+            }
+            match found {
                 Some(c) => d.clone_from_card(c),
                 None => missing_clone = true,
             }
@@ -322,6 +331,8 @@ fn card_key(rest: &str) -> String {
     rest.trim_start_matches(':').trim().to_string()
 }
 
+/// Parses a number into `field`; on a typo in the data, reports it and keeps the default.
+/// (`T: FromStr` means "any type that can be parsed from text", here `u32` or `i32`.)
 fn parse_into<T: std::str::FromStr>(field: &mut T, raw: &str, what: &str, key: &str) {
     match raw.trim().parse() {
         Ok(v) => *field = v,
@@ -329,7 +340,6 @@ fn parse_into<T: std::str::FromStr>(field: &mut T, raw: &str, what: &str, key: &
     }
 }
 
-/// Parses `<set_path>/CardData.txt`; a missing file yields an empty set.
 /// Parses a set's card file: `<file>.txt` when the set names one, else `CardData.txt`
 /// (file names are matched case-insensitively). A missing file yields an empty set.
 pub fn load_cards(
@@ -356,7 +366,7 @@ pub fn load_cards(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::parser::effects::parse_common_effects;
+    use crate::simulator::common_effects::parse_common_effects;
 
     const DATA: &str = "\
 Character: KS/W49-E001

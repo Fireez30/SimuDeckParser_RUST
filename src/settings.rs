@@ -7,10 +7,21 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-pub const SIMULATOR_PATH: &str = "simulator_data_path";
-/// Name of the linked Encore Decks account. Its session is in the system credential store.
-pub const ENCORE_USER: &str = "encoredecks_user";
+// The keys of the settings file.
 
+/// Root folder of the simulator install.
+pub const SIMULATOR_PATH: &str = "simulator_data_path";
+/// Name of the linked Encore Decks account. Its session is in the system credential store,
+/// never in this file.
+pub const ENCORE_USER: &str = "encoredecks_user";
+/// `system`, `light` or `dark`.
+pub const THEME: &str = "ui_theme";
+/// The screen opened at startup: the last one used, `cards` or `decks`.
+pub const START_SCREEN: &str = "ui_screen";
+/// The serie the card list opens at startup: the last one shown.
+pub const SERIE: &str = "ui_serie";
+
+/// The settings file. Every call reads or rewrites the file: it is a handful of lines.
 pub struct Settings {
     path: PathBuf,
 }
@@ -27,6 +38,7 @@ impl Settings {
         Self { path: path.into() }
     }
 
+    /// Every `key:value` line of the file (none when it does not exist yet).
     pub fn all(&self) -> BTreeMap<String, String> {
         let Ok(content) = fs::read_to_string(&self.path) else {
             return BTreeMap::new();
@@ -38,6 +50,7 @@ impl Settings {
             .collect()
     }
 
+    /// The value of `key`; `None` when it is missing or empty.
     pub fn get(&self, key: &str) -> Option<String> {
         self.all().remove(key).filter(|v| !v.is_empty())
     }
@@ -89,7 +102,10 @@ mod tests {
         let expected = Path::new("weiss_simulator_parser").join("settings.conf");
         assert!(path.ends_with(&expected), "unexpected path: {path:?}");
         if let Some(cfg) = dirs::config_dir() {
-            assert_eq!(path.parent(), Some(cfg.join("weiss_simulator_parser").as_path()));
+            assert_eq!(
+                path.parent(),
+                Some(cfg.join("weiss_simulator_parser").as_path())
+            );
         }
     }
 

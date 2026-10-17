@@ -1,8 +1,17 @@
+//! The data the whole program works with: cards, the series and sets they belong to, and decks.
+//!
+//! A simulator install holds many [`Serie`]s (one per franchise, e.g. "KonoSuba!"). Each serie
+//! has one or more [`Set`]s (booster boxes, trial decks…), and each set has its [`Card`]s,
+//! keyed by card code (`KS/W49-E001`).
+
 use std::collections::BTreeMap;
-use std::fmt::Write as _;
 use std::path::PathBuf;
 
-/// Declaration order matters: it is the sort order used by `SortOrder::Color`.
+/// Height / width of a card picture (the simulator's artwork is 224 × 313 pixels).
+pub const CARD_IMAGE_RATIO: f32 = 313.0 / 224.0;
+
+/// The order of the variants matters: it is the order of the card list's colour sort.
+/// (`derive(PartialOrd, Ord)` compares enum variants in declaration order.)
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Color {
     Yellow,
@@ -28,7 +37,7 @@ impl Color {
     }
 }
 
-/// Declaration order matters: characters sort before events, events before climaxes.
+/// The order of the variants matters: characters sort before events, events before climaxes.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum CardType {
     Character,
@@ -44,8 +53,18 @@ impl CardType {
             CardType::Climax => "Climax",
         }
     }
+
+    /// Section title for a group of cards of this type.
+    pub fn plural_label(self) -> &'static str {
+        match self {
+            CardType::Character => "Characters",
+            CardType::Event => "Events",
+            CardType::Climax => "Climaxes",
+        }
+    }
 }
 
+/// The icon in a card's top-right corner, which takes effect when the card is revealed.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]
 pub enum Trigger {
     Soul,
@@ -77,25 +96,13 @@ impl Trigger {
     }
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SortOrder {
-    Color,
-    TypeAscending,
-    LevelAscending,
-    LevelDescending,
-    CostAscending,
-    CostDescending,
-    PowerAscending,
-    PowerDescending,
-    KeycodeAscending,
-}
-
 #[derive(Debug, Clone, PartialEq)]
 pub struct Card {
+    /// The card code, e.g. `KS/W49-E001`.
     pub key: String,
     pub card_type: CardType,
     pub name: String,
-    /// `None` when no artwork was found; the UI draws the placeholder instead.
+    /// `None` when no artwork was found; the UI draws a placeholder instead.
     pub image: Option<PathBuf>,
     pub color: Color,
     pub level: u32,
@@ -104,64 +111,20 @@ pub struct Card {
     pub triggers: Vec<Trigger>,
     pub soul_count: u32,
     pub traits: Vec<String>,
-    /// Simulator script lines (`Auto:` / `Cont:` / `Act:` blocks).
+    /// The simulator's script for the card (`Auto:` / `Cont:` / `Act:` blocks). Not shown.
     pub code: String,
+    /// The effect text shown to players, one effect per line.
     pub text: String,
-}
-
-impl Card {
-    /// Plain-text dump of the card, used for debugging and parse comparisons.
-    pub fn whole_text(&self) -> String {
-        let mut s = String::new();
-        let _ = writeln!(s, " Card : {} ({}) ", self.key, self.card_type.label());
-        let _ = writeln!(s, "    name : {}", self.name);
-        let _ = writeln!(s, "    level {} / cost {}", self.level, self.cost);
-        let _ = writeln!(s, "    power : {}", self.power);
-        let _ = writeln!(s, "    color : {}", self.color.label());
-        if !self.triggers.is_empty() {
-            s.push_str("    triggers : ");
-            for t in &self.triggers {
-                s.push_str(t.label());
-                s.push(' ');
-            }
-            s.push('\n');
-        }
-        let _ = writeln!(s, "    souls : {}", self.soul_count);
-        for (i, trait_name) in self.traits.iter().enumerate() {
-            let _ = writeln!(s, "trait {i} : {trait_name}");
-        }
-        let _ = writeln!(s, "    text : {}", self.text);
-        let _ = writeln!(s, "    code : {}", self.code);
-        let image = self
-            .image
-            .as_ref()
-            .map(|p| p.display().to_string())
-            .unwrap_or_default();
-        let _ = writeln!(s, "    image : {image}");
-        s
-    }
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct Set {
+    /// Code prefix shared by the set's cards, e.g. `KS/W49`.
     pub key: String,
     pub name: String,
     pub path: PathBuf,
+    /// The set's cards by card code. A `BTreeMap` is a map that keeps its keys sorted.
     pub cards: BTreeMap<String, Card>,
-}
-
-impl Set {
-    /// Exact lookup, then retry without trailing letters (foil/rarity suffix such as `...-001S`).
-    pub fn get_card(&self, code: &str) -> Option<&Card> {
-        self.cards.get(code).or_else(|| {
-            let stripped = crate::text::remove_trailing_alphas(code);
-            if stripped != code {
-                self.cards.get(stripped)
-            } else {
-                None
-            }
-        })
-    }
 }
 
 #[derive(Debug, Clone, Default)]
@@ -171,9 +134,15 @@ pub struct Serie {
     pub sets: Vec<Set>,
 }
 
+/// A deck whose card codes have been matched to loaded cards (see
+/// [`crate::card_index::CardIndex::resolve_deck`]). For the deck *file* as saved in the
+/// simulator, see [`crate::simulator::deck_files::DeckFile`].
 #[derive(Debug, Clone, Default)]
 pub struct Deck {
     pub name: String,
     pub date: String,
+    /// One entry per copy, in the deck file's order.
     pub cards: Vec<Card>,
+    /// Codes of the deck that match no loaded card (another simulator version, a typo…).
+    pub unmatched: Vec<String>,
 }

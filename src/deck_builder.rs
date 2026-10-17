@@ -1,10 +1,12 @@
-//! A deck being built: cards with their number of copies, and the deck construction rules.
+//! A deck being built in the deck editor: its cards with their number of copies, and the deck
+//! construction rules.
 
 use std::fmt;
 
-use crate::filters::{DECK_ORDER, sort_cards};
+use crate::filters::sort_for_deck;
 use crate::model::{Card, CardType};
 
+/// Cards in a deck the simulator plays.
 pub const DECK_SIZE: usize = 50;
 /// Copies allowed of cards sharing a name.
 pub const MAX_COPIES: usize = 4;
@@ -33,6 +35,7 @@ impl Group {
     }
 }
 
+/// Why a card could not be added. `Display` (below) turns it into the message shown to users.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum AddError {
     Full,
@@ -55,6 +58,7 @@ impl fmt::Display for AddError {
 
 #[derive(Debug, Clone, Default)]
 pub struct DeckList {
+    /// Each different card once, with its number of copies.
     entries: Vec<(Card, usize)>,
     /// Codes of an edited deck that match no loaded card; kept as they are when saving.
     pub unmatched: Vec<String>,
@@ -142,7 +146,7 @@ impl DeckList {
     /// Distinct cards in deck order, with their copies.
     pub fn entries(&self) -> Vec<(Card, usize)> {
         let mut cards: Vec<Card> = self.entries.iter().map(|(c, _)| c.clone()).collect();
-        sort_cards(&mut cards, DECK_ORDER);
+        sort_for_deck(&mut cards);
         cards
             .into_iter()
             .map(|c| {

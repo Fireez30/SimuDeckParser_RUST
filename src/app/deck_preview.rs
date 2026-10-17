@@ -6,22 +6,24 @@ use std::collections::{BTreeMap, HashMap};
 
 use egui::{Align2, CornerRadius, Margin, Sense, Stroke, Ui, vec2};
 use egui_material_icons::icons::{ICON_CHECK_CIRCLE, ICON_WARNING};
-use simu_deck_parser::filters::{DECK_ORDER, sort_cards};
-use simu_deck_parser::model::{Card, CardType, Color, Trigger};
+use simu_deck_parser::deck_builder::{DECK_SIZE, MAX_CLIMAXES};
+use simu_deck_parser::filters::sort_for_deck;
+use simu_deck_parser::model::{CARD_IMAGE_RATIO, Card, CardType, Color, Trigger};
 
-use super::card_view::{CARD_RATIO, DetailPane};
+use super::assets;
+use super::card_view::DetailPane;
 use super::theme::{self, scheme};
-use crate::assets;
 
+/// Width of the card pictures.
 const THUMB_WIDTH: f32 = 128.0;
-const DECK_SIZE: usize = 50;
-const MAX_CLIMAXES: usize = 8;
 
 /// Deck cards grouped by code, in deck order, with composition counts.
 pub(super) struct Summary {
+    /// The cards by type, each different card once with its copies.
     groups: Vec<(CardType, Vec<(Card, usize)>)>,
     total: usize,
     by_type: BTreeMap<CardType, usize>,
+    /// Characters and events of level 0, 1, 2 and 3.
     by_level: [usize; 4],
     by_color: BTreeMap<Color, usize>,
     /// Cards with at least one trigger icon.
@@ -33,8 +35,9 @@ pub(super) struct Summary {
 impl Summary {
     pub(super) fn new(cards: &[Card]) -> Self {
         let mut sorted = cards.to_vec();
-        sort_cards(&mut sorted, DECK_ORDER);
+        sort_for_deck(&mut sorted);
         let mut groups: Vec<(CardType, Vec<(Card, usize)>)> = Vec::new();
+        // Where each card code is in `groups`: (group, position in the group).
         let mut index: HashMap<String, (usize, usize)> = HashMap::new();
         let mut by_type = BTreeMap::new();
         let mut by_level = [0; 4];
@@ -76,14 +79,6 @@ impl Summary {
     }
 }
 
-pub(super) fn plural(t: CardType) -> &'static str {
-    match t {
-        CardType::Character => "Characters",
-        CardType::Event => "Events",
-        CardType::Climax => "Climaxes",
-    }
-}
-
 /// The interactive part of an open deck: composition tiles and card groups, plus the
 /// detail pane that hover and clicks feed.
 #[derive(Default)]
@@ -102,19 +97,19 @@ impl DeckPreview {
 
     /// Draws the deck's unmatched codes, composition tiles and card groups. Run inside
     /// the caller's scroll area; the pane on the right is drawn separately.
-    pub(super) fn show(&mut self, ui: &mut Ui, summary: &Summary, missing: &[String]) {
+    pub(super) fn show(&mut self, ui: &mut Ui, summary: &Summary, unmatched: &[String]) {
         let s = scheme(ui);
         let pinned = self.pane.pinned_key().map(str::to_owned);
         let mut hovered = None;
         let mut clicked = None;
-        if !missing.is_empty() {
+        if !unmatched.is_empty() {
             theme::banner(
                 ui,
                 ICON_WARNING,
                 &format!(
                     "{} code(s) matched no card in the loaded simulator: {}",
-                    missing.len(),
-                    missing.join(", ")
+                    unmatched.len(),
+                    unmatched.join(", ")
                 ),
             );
             ui.add_space(8.0);
@@ -122,10 +117,10 @@ impl DeckPreview {
         stats(ui, summary);
         ui.add_space(12.0);
 
-        let thumb = vec2(THUMB_WIDTH, THUMB_WIDTH * CARD_RATIO);
+        let thumb = vec2(THUMB_WIDTH, THUMB_WIDTH * CARD_IMAGE_RATIO);
         for (card_type, cards) in &summary.groups {
             let count: usize = cards.iter().map(|(_, n)| n).sum();
-            theme::section_header(ui, plural(*card_type), Some(count));
+            theme::section_header(ui, card_type.plural_label(), Some(count));
             ui.horizontal_wrapped(|ui| {
                 ui.spacing_mut().item_spacing = vec2(10.0, 10.0);
                 for (card, copies) in cards {
@@ -198,8 +193,7 @@ fn stats(ui: &mut Ui, summary: &Summary) {
         tile(ui, 180.0, &mut |ui| {
             ui.label(theme::label("Cards").color(s.on_surface_variant));
             ui.label(
-                theme::headline(format!("{} / {DECK_SIZE}", summary.total))
-                    .color(s.on_surface),
+                theme::headline(format!("{} / {DECK_SIZE}", summary.total)).color(s.on_surface),
             );
             let ok = summary.total == DECK_SIZE && climaxes <= MAX_CLIMAXES;
             let (icon, text, color) = if ok {
@@ -229,7 +223,7 @@ fn stats(ui: &mut Ui, summary: &Summary) {
                 .show(ui, |ui| {
                     for t in [CardType::Character, CardType::Event, CardType::Climax] {
                         let n = summary.by_type.get(&t).copied().unwrap_or(0);
-                        ui.label(theme::body_small(plural(t)).color(s.on_surface_variant));
+                        ui.label(theme::body_small(t.plural_label()).color(s.on_surface_variant));
                         ui.label(theme::label(n.to_string()).color(s.on_surface));
                         ui.end_row();
                     }
@@ -334,8 +328,11 @@ fn stats(ui: &mut Ui, summary: &Summary) {
                     egui::pos2(x, rect.top()),
                     egui::pos2(x + w - 2.0, rect.bottom()),
                 );
-                ui.painter()
-                    .rect_filled(seg, CornerRadius::same(4), theme::card_color(color, dark));
+                ui.painter().rect_filled(
+                    seg,
+                    CornerRadius::same(4),
+                    theme::card_color(color, dark),
+                );
                 x += w;
             }
             ui.add_space(2.0);

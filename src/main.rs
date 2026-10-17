@@ -1,8 +1,12 @@
+//! Program entry point: opens the window and hands it to [`app::App`].
+//!
+//! The window's code is in `src/app/`; the rest of the program (reading the simulator's files,
+//! Encore Decks, PDFs…) is the library in `src/lib.rs`, used here as `simu_deck_parser::…`.
+
 // Release builds on Windows open no console window next to the app.
 #![cfg_attr(not(debug_assertions), windows_subsystem = "windows")]
 
 mod app;
-mod assets;
 
 fn main() -> eframe::Result {
     let options = eframe::NativeOptions {

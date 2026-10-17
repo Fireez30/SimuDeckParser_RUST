@@ -43,6 +43,8 @@ bash build_windows.sh
 .\target\x86_64-pc-windows-gnu\release\simu_deck_parser.exe
 ```
 
+New to the code (or to Rust)? Start with [documentation/ARCHITECTURE.md](documentation/ARCHITECTURE.md): a map of the code, how the window works, and a short Rust primer for this project.
+
 Run the tests with `cargo test`. Ignored tests cover the rest: `cargo test -- --ignored` also queries encoredecks.com and renders every screen to `target/screenshots` (or `$SCREENSHOT_DIR`); with `SIMULATOR_ROOT=/path/to/simulator` they load a real install (read-only) and report cards without artwork and unresolved deck codes.
 
 # Usage

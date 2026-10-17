@@ -10,11 +10,12 @@
 
 use std::path::{Path, PathBuf};
 
-use super::cards::load_cards;
-use super::effects::CommonEffects;
+use super::card_file::load_cards;
+use super::common_effects::CommonEffects;
 use crate::model::{Serie, Set};
 use crate::text::decode_text;
 
+/// One `Folder:` block of the file, before its cards are read.
 #[derive(Default)]
 struct SetBlock {
     folder: String,
@@ -82,7 +83,10 @@ pub fn load_serie(
         })
         .filter(|set| !set.cards.is_empty())
         .collect();
-    (!sets.is_empty()).then(|| Serie {
+    if sets.is_empty() {
+        return None;
+    }
+    Some(Serie {
         name,
         path: serie_path.to_path_buf(),
         sets,
@@ -104,11 +108,14 @@ pub fn load_series(
         .collect();
     folders.sort();
 
+    // Parse the series in parallel: split the folders into one group per CPU core, and give
+    // each group to a thread. `thread::scope` lets the threads borrow `effects` and the paths,
+    // and waits for all of them before returning.
     let workers = std::thread::available_parallelism().map_or(4, |n| n.get());
-    let chunk = folders.len().div_ceil(workers).max(1);
-    let series = std::thread::scope(|scope| {
-        let handles: Vec<_> = folders
-            .chunks(chunk)
+    let group_size = folders.len().div_ceil(workers).max(1);
+    let mut series: Vec<Serie> = std::thread::scope(|scope| {
+        let threads: Vec<_> = folders
+            .chunks(group_size)
             .map(|group| {
                 scope.spawn(move || {
                     group
@@ -118,12 +125,11 @@ pub fn load_series(
                 })
             })
             .collect();
-        handles
+        threads
             .into_iter()
-            .flat_map(|h| h.join().expect("serie parser thread panicked"))
-            .collect::<Vec<_>>()
+            .flat_map(|thread| thread.join().expect("serie parser thread panicked"))
+            .collect()
     });
-    let mut series = series;
     series.sort_by_key(|s| s.name.to_lowercase());
     Ok(series)
 }

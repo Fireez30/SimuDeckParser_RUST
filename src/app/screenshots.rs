@@ -7,10 +7,13 @@ use std::path::Path;
 
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
-use simu_deck_parser::decks;
-use simu_deck_parser::settings::{SIMULATOR_PATH, Settings};
+use simu_deck_parser::card_index::CardIndex;
+use simu_deck_parser::encoredecks::account::Account;
+use simu_deck_parser::encoredecks::decks::{AccountDeck, DeckPage};
+use simu_deck_parser::settings::{self, Settings};
+use simu_deck_parser::simulator::deck_files;
 
-use super::{App, Screen};
+use super::{App, Notice, Screen};
 
 fn write(path: &Path, content: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -119,14 +122,8 @@ fn screenshots() {
                 "Standby control",
                 "AI_Axis",
             ] {
-                decks::save_new_deck(
-                    &sim.join("Decks"),
-                    name,
-                    "10:00  01/01/2025",
-                    "",
-                    &deck,
-                )
-                .unwrap();
+                deck_files::save_new_deck(&sim.join("Decks"), name, "10:00  01/01/2025", "", &deck)
+                    .unwrap();
             }
             sim
         }
@@ -142,10 +139,10 @@ fn screenshots() {
         let settings_path = dir.path().join(format!("settings-{dark}.conf"));
         let settings = Settings::at(&settings_path);
         settings
-            .set(SIMULATOR_PATH, &sim.to_string_lossy())
+            .set(settings::SIMULATOR_PATH, &sim.to_string_lossy())
             .unwrap();
         settings
-            .set("ui_theme", if dark { "dark" } else { "light" })
+            .set(settings::THEME, if dark { "dark" } else { "light" })
             .unwrap();
         let mut harness = Harness::builder()
             .with_size(egui::vec2(1500.0, 950.0))
@@ -193,10 +190,14 @@ fn screenshots() {
         harness.event(egui::Event::Text("re".into()));
         shot(&mut harness, "3a-serie-picker");
         harness.key_press(egui::Key::Escape);
-        harness.state_mut().notify(super::Notice::Error(
-            "Could not load the deck".into(),
-            "No such file or directory (os error 2)".into(),
-        ));
+        let ctx = harness.ctx.clone();
+        harness.state_mut().notify(
+            &ctx,
+            Notice::error(
+                "Could not load the deck",
+                "No such file or directory (os error 2)",
+            ),
+        );
         shot(&mut harness, "3b-error");
         harness.key_press(egui::Key::Escape);
         shot(&mut harness, "3-cards-list");
@@ -213,7 +214,7 @@ fn screenshots() {
             harness.remove_cursor();
             shot(&mut harness, "3e-related-cards");
             // A related card opens in the detail pane, shown in list view while pinned.
-            harness.get_by_label("KS/W49-E006").click();
+            harness.get_by_label("KS/W49-E020").click();
             harness.remove_cursor();
             shot(&mut harness, "3f-related-pinned");
             harness.get_by_label("Close window").click();
@@ -231,7 +232,7 @@ fn screenshots() {
         harness.get_by_label("Cancel").click();
         harness.run_steps(2);
         // Same with a linked account (a fake session: nothing is sent).
-        harness.state_mut().account = Some(simu_deck_parser::encore::Account {
+        harness.state_mut().account = Some(Account {
             name: "Megumin".into(),
             session: zeroize::Zeroizing::new("fake".into()),
         });
@@ -320,33 +321,31 @@ fn screenshots() {
         shot(&mut harness, "6-import");
         harness.key_press(egui::Key::Escape);
         // The Encore screen: the linked account's decks, previewed then imported.
-        let account = simu_deck_parser::encore::Account {
+        let account = Account {
             name: "Megumin".into(),
             session: zeroize::Zeroizing::new("fake".into()),
         };
         harness.state_mut().account = Some(account.clone());
         // Loaded before the screen opens: it would fetch the page over the network.
-        harness.state_mut().encore_page.open_loaded(
-            simu_deck_parser::encore::DeckPage {
-                page: 1,
-                total_pages: 2,
-                total_decks: 30,
-                decks: [
-                    ("Megumin explosion", "abc123", ""),
-                    ("Encore deck", "def456", "Tournament deck"),
-                    ("Unnamed", "ghi789", ""),
-                ]
-                .into_iter()
-                .map(|(name, id, description)| simu_deck_parser::encore::AccountDeck {
-                    name: name.into(),
-                    id: id.into(),
-                    date: "03:04  01/02/2025".into(),
-                    description: description.into(),
-                })
-                .collect(),
-            },
-        );
-        harness.get_by_label("Encore").click();
+        harness.state_mut().encore_screen.open_loaded(DeckPage {
+            page: 1,
+            total_pages: 2,
+            total_decks: 30,
+            decks: [
+                ("Megumin explosion", "abc123", ""),
+                ("Encore deck", "def456", "Tournament deck"),
+                ("Unnamed", "ghi789", ""),
+            ]
+            .into_iter()
+            .map(|(name, id, description)| AccountDeck {
+                name: name.into(),
+                id: id.into(),
+                date: "03:04  01/02/2025".into(),
+                description: description.into(),
+            })
+            .collect(),
+        });
+        harness.get_by_label("Encore Deck").click();
         harness.run_steps(2);
         shot(&mut harness, "6b-encore");
         // A picked deck previews its cards (already resolved, so nothing is fetched).
@@ -361,27 +360,22 @@ fn screenshots() {
         ]
         .map(String::from)
         .to_vec();
-        let resolved = simu_deck_parser::encore::build_deck(
-            &simu_deck_parser::codes::CardIndex::new(&series),
-            "Encore deck",
-            "03:04  01/02/2025",
-            &codes,
-        );
-        harness.state_mut().encore_page.preview_loaded(
-            simu_deck_parser::encore::AccountDeck {
+        let deck = CardIndex::new(&series).resolve_deck("Encore deck", "03:04  01/02/2025", &codes);
+        harness.state_mut().encore_screen.preview_loaded(
+            AccountDeck {
                 name: "Encore deck".into(),
                 id: "def456".into(),
                 date: "03:04  01/02/2025".into(),
                 description: "Tournament deck".into(),
             },
-            resolved,
+            deck,
         );
         shot(&mut harness, "6c-encore-preview");
         harness.state_mut().account = None;
         harness.run_steps(2);
         harness.get_by_label("Settings").click();
         shot(&mut harness, "7-settings");
-        harness.state_mut().account = Some(simu_deck_parser::encore::Account {
+        harness.state_mut().account = Some(Account {
             name: "Megumin".into(),
             session: zeroize::Zeroizing::new("fake".into()),
         });
@@ -401,7 +395,3 @@ fn screenshots() {
         shot(&mut harness, "9-setup-detected");
     }
 }
-
-
-
-

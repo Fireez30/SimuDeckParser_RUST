@@ -11,7 +11,7 @@
 //! KS/W49-E001
 //! ```
 //!
-//! `Sleeve` names an image of `<simulator>/<Game>_Data/StreamingAssets/Sleeves`; it is
+//! `Sleeve` names an image of the simulator's `Sleeves` folder (see [`super::sleeves`]); it is
 //! empty when the deck has none.
 //!
 //! `AI_*.txt` files are the AI opponents' decks, copied there by the simulator.
@@ -24,6 +24,8 @@ use anyhow::{Context, Result};
 const HEADER: &str = "# WeissSim Deck";
 const AI_PREFIX: &str = "AI_";
 
+/// A deck file as saved in the simulator. Its cards are only codes; to get the cards
+/// themselves, see [`crate::card_index::CardIndex::resolve_deck`].
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DeckFile {
     pub name: String,
@@ -34,13 +36,6 @@ pub struct DeckFile {
     pub path: PathBuf,
     /// Deck of an AI opponent.
     pub ai: bool,
-}
-
-/// A sleeve image of the simulator's `Sleeves` folder.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Sleeve {
-    pub name: String,
-    pub path: PathBuf,
 }
 
 /// Parses a deck file; the name falls back to the file name.
@@ -105,6 +100,7 @@ pub fn list_decks(dir: &Path) -> Result<Vec<DeckFile>> {
     Ok(decks)
 }
 
+/// The content of a deck file, in the simulator's format.
 pub fn format_deck(name: &str, date: &str, sleeve: &str, codes: &[String]) -> String {
     // The simulator writes `Sleeve:` with nothing after the colon when the deck has none.
     let sleeve = sleeve.trim();
@@ -119,31 +115,6 @@ pub fn format_deck(name: &str, date: &str, sleeve: &str, codes: &[String]) -> St
         out.push('\n');
     }
     out
-}
-
-/// Every sleeve image in `dir`, sorted by name (a missing folder has no sleeves).
-pub fn list_sleeves(dir: &Path) -> Vec<Sleeve> {
-    const IMAGE_EXTENSIONS: [&str; 3] = ["jpg", "jpeg", "png"];
-    let Ok(entries) = fs::read_dir(dir) else {
-        return Vec::new();
-    };
-    let mut sleeves: Vec<Sleeve> = entries
-        .flatten()
-        .map(|e| e.path())
-        .filter(|p| {
-            p.is_file()
-                && p.extension()
-                    .is_some_and(|x| IMAGE_EXTENSIONS.iter().any(|e| x.eq_ignore_ascii_case(e)))
-        })
-        .filter_map(|p| {
-            Some(Sleeve {
-                name: p.file_name()?.to_string_lossy().into_owned(),
-                path: p,
-            })
-        })
-        .collect();
-    sleeves.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()));
-    sleeves
 }
 
 /// `name` without the characters that are not allowed in file names on any system.
@@ -180,17 +151,15 @@ pub fn save_new_deck(
             .map(|decks| decks.iter().any(|d| d.name.eq_ignore_ascii_case(n)))
             .unwrap_or(false)
     };
-    let (final_name, path) = (1..)
-        .map(|i| {
-            if i == 1 {
-                (name.trim().to_string(), stem.clone())
-            } else {
-                (format!("{} ({i})", name.trim()), format!("{stem} ({i})"))
-            }
-        })
-        .map(|(n, s)| (n, dir.join(format!("{s}.txt"))))
-        .find(|(n, p)| !p.exists() && !taken(n))
-        .expect("an unused file name exists");
+    // Try "Name", then "Name (2)", "Name (3)"… until neither the file nor the name is taken.
+    let mut final_name = name.trim().to_string();
+    let mut path = dir.join(format!("{stem}.txt"));
+    let mut suffix = 2;
+    while path.exists() || taken(&final_name) {
+        final_name = format!("{} ({suffix})", name.trim());
+        path = dir.join(format!("{stem} ({suffix}).txt"));
+        suffix += 1;
+    }
     let final_name = if final_name.is_empty() {
         stem
     } else {
@@ -270,7 +239,11 @@ mod tests {
             "Fallback"
         );
         assert_eq!(
-            parse_deck("# WeissSim Deck\nName: X\nCards:\nA\n", Path::new("x/None.txt")).sleeve,
+            parse_deck(
+                "# WeissSim Deck\nName: X\nCards:\nA\n",
+                Path::new("x/None.txt")
+            )
+            .sleeve,
             ""
         );
     }
@@ -334,25 +307,6 @@ mod tests {
             parse_deck(&with_sleeve, Path::new("d/My deck.txt")).sleeve,
             "RZ Emilia 1.jpg"
         );
-    }
-
-    #[test]
-    fn sleeves_of_a_folder() {
-        let dir = tempfile::tempdir().unwrap();
-        assert!(list_sleeves(dir.path()).is_empty());
-
-        let sleeves = dir.path().join("Sleeves");
-        fs::create_dir_all(&sleeves).unwrap();
-        fs::write(sleeves.join("B sleeve.jpg"), "").unwrap();
-        fs::write(sleeves.join("a sleeve.png"), "").unwrap();
-        fs::write(sleeves.join("ignored.txt"), "").unwrap();
-
-        let listed = list_sleeves(&sleeves);
-        assert_eq!(
-            listed.iter().map(|s| s.name.as_str()).collect::<Vec<_>>(),
-            ["a sleeve.png", "B sleeve.jpg"]
-        );
-        assert!(listed[0].path.ends_with("a sleeve.png"));
     }
 
     #[test]

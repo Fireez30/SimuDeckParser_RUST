@@ -3,13 +3,14 @@
 use std::fs;
 use std::path::Path;
 
-use simu_deck_parser::codes::{CardIndex, transform_to_existing_keys};
-use simu_deck_parser::decks;
-use simu_deck_parser::encore::build_deck;
-use simu_deck_parser::filters::{DECK_ORDER, sort_cards};
-use simu_deck_parser::layout::Layout;
+use simu_deck_parser::card_codes::transform_to_existing_keys;
+use simu_deck_parser::card_index::CardIndex;
+use simu_deck_parser::encoredecks;
+use simu_deck_parser::filters::sort_for_deck;
 use simu_deck_parser::model::{CardType, Trigger};
-use simu_deck_parser::parser::load_simulator;
+use simu_deck_parser::simulator::deck_files;
+use simu_deck_parser::simulator::folder::SimulatorFolder;
+use simu_deck_parser::simulator::load_series;
 
 fn write(path: &Path, content: &str) {
     fs::create_dir_all(path.parent().unwrap()).unwrap();
@@ -39,9 +40,9 @@ fn fake_simulator(root: &Path) {
 fn load_and_import_round_trip() {
     let dir = tempfile::tempdir().unwrap();
     fake_simulator(dir.path());
-    let layout = Layout::find(&dir.path().join("CardContent")).unwrap();
+    let folder = SimulatorFolder::find(&dir.path().join("CardContent")).unwrap();
 
-    let series = load_simulator(&layout).unwrap();
+    let series = load_series(&folder).unwrap();
     let serie = series.iter().find(|s| s.name == "KonoSuba").unwrap();
     let cards = &serie.sets[0].cards;
     assert_eq!(cards.len(), 3);
@@ -64,14 +65,14 @@ fn load_and_import_round_trip() {
         ["KS/W49-E001", "KS/W49-E099", "KS/W49-E002", "XX/Y1-001"]
     );
 
-    decks::save_new_deck(&layout.decks(), "Test", "10:00  01/01/2025", "", &codes).unwrap();
-    let stored = decks::list_decks(&layout.decks()).unwrap();
+    deck_files::save_new_deck(&folder.decks(), "Test", "10:00  01/01/2025", "", &codes).unwrap();
+    let stored = deck_files::list_decks(&folder.decks()).unwrap();
     assert_eq!(stored.len(), 1);
     assert_eq!(stored[0].codes, codes);
 
-    let (mut deck, missing) = build_deck(&index, "Test", "", &stored[0].codes);
-    assert_eq!(missing, ["XX/Y1-001"]);
-    sort_cards(&mut deck.cards, DECK_ORDER);
+    let mut deck = index.resolve_deck("Test", "", &stored[0].codes);
+    assert_eq!(deck.unmatched, ["XX/Y1-001"]);
+    sort_for_deck(&mut deck.cards);
     let order: Vec<(&str, CardType)> = deck
         .cards
         .iter()
@@ -92,9 +93,9 @@ fn load_and_import_round_trip() {
 #[ignore = "needs a simulator install in SIMULATOR_ROOT"]
 fn real_install() {
     let root = std::env::var("SIMULATOR_ROOT").expect("SIMULATOR_ROOT");
-    let layout = Layout::find(Path::new(&root)).expect("not a simulator folder");
+    let folder = SimulatorFolder::find(Path::new(&root)).expect("not a simulator folder");
     let start = std::time::Instant::now();
-    let series = load_simulator(&layout).unwrap();
+    let series = load_series(&folder).unwrap();
     let all: Vec<_> = series
         .iter()
         .flat_map(|s| &s.sets)
@@ -117,15 +118,15 @@ fn real_install() {
     assert!(!series.is_empty());
 
     let index = CardIndex::new(&series);
-    for deck in decks::list_decks(&layout.decks()).unwrap() {
-        let (built, missing) = build_deck(&index, &deck.name, &deck.date, &deck.codes);
+    for deck in deck_files::list_decks(&folder.decks()).unwrap() {
+        let built = index.resolve_deck(&deck.name, &deck.date, &deck.codes);
         println!(
             "deck {:?}{}: {} cards, sleeve {:?}, missing {:?}",
             deck.name,
             if deck.ai { " (AI)" } else { "" },
             built.cards.len(),
             deck.sleeve,
-            missing
+            built.unmatched
         );
     }
 }
@@ -135,8 +136,8 @@ fn real_install() {
 #[ignore = "needs a simulator install in SIMULATOR_ROOT"]
 fn real_install_gaps() {
     let root = std::env::var("SIMULATOR_ROOT").expect("SIMULATOR_ROOT");
-    let layout = Layout::find(Path::new(&root)).unwrap();
-    let series = load_simulator(&layout).unwrap();
+    let folder = SimulatorFolder::find(Path::new(&root)).unwrap();
+    let series = load_series(&folder).unwrap();
     for set in series.iter().flat_map(|s| &s.sets) {
         let missing: Vec<_> = set.cards.values().filter(|c| c.image.is_none()).collect();
         if !missing.is_empty() {
@@ -165,7 +166,7 @@ fn real_install_gaps() {
 #[ignore = "needs a simulator install in SIMULATOR_ROOT"]
 fn real_install_text_gaps() {
     let root = std::env::var("SIMULATOR_ROOT").expect("SIMULATOR_ROOT");
-    let series = load_simulator(&Layout::find(Path::new(&root)).unwrap()).unwrap();
+    let series = load_series(&SimulatorFolder::find(Path::new(&root)).unwrap()).unwrap();
     let cards: Vec<_> = series
         .iter()
         .flat_map(|s| &s.sets)
@@ -194,15 +195,16 @@ fn real_install_text_gaps() {
 #[ignore = "needs SIMULATOR_ROOT and network access"]
 fn real_install_import() {
     let root = std::env::var("SIMULATOR_ROOT").expect("SIMULATOR_ROOT");
-    let series = load_simulator(&Layout::find(Path::new(&root)).unwrap()).unwrap();
+    let series = load_series(&SimulatorFolder::find(Path::new(&root)).unwrap()).unwrap();
     let dir = tempfile::tempdir().unwrap();
     let link = "https://www.encoredecks.com/deck/PPyvcLuvt";
-    let (deck, missing) = simu_deck_parser::encore::import(link, &series, dir.path()).unwrap();
-    let saved = decks::list_decks(dir.path()).unwrap();
+    let deck = encoredecks::decks::import(link, &series, dir.path()).unwrap();
+    let saved = deck_files::list_decks(dir.path()).unwrap();
     println!(
-        "imported {:?}: {} cards, missing {missing:?}\n{}",
+        "imported {:?}: {} cards, missing {:?}\n{}",
         deck.name,
         deck.cards.len(),
+        deck.unmatched,
         fs::read_to_string(&saved[0].path)
             .unwrap()
             .lines()

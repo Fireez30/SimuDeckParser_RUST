@@ -1,3 +1,6 @@
+//! Text helpers: decoding the simulator's files, reading the markup of card text, and finding
+//! the card names quoted in it.
+
 use crate::model::Trigger;
 
 /// Strips trailing ASCII letters (`"ABC/W1-001SP"` -> `"ABC/W1-001"`).
@@ -58,81 +61,105 @@ pub fn decode_text(bytes: &[u8]) -> String {
     }
 }
 
-/// A run of card text, after reading the simulator's rich-text tags.
+/// How a run of card text is styled by the simulator's rich-text tags.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct TextStyle {
+    pub bold: bool,
+    pub italic: bool,
+    /// Inside a `<color=…>` tag (always red in the card data).
+    pub highlight: bool,
+    pub strike: bool,
+}
+
+/// A piece of card text, after reading the simulator's rich-text tags.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Rich<'a> {
-    Text {
-        text: &'a str,
-        bold: bool,
-        italic: bool,
-        /// Inside a `<color=…>` tag (always red in the card data).
-        highlight: bool,
-        strike: bool,
-    },
+    Text(&'a str, TextStyle),
     /// `<sprite name="1cost"/>`: an inline icon.
     Sprite(&'a str),
+}
+
+/// How many `<b>`, `<i>`… tags are open at a point of the text. Tags can nest (`<b>a<b>b</b>
+/// c</b>`), so they are counted rather than switched on and off.
+#[derive(Default)]
+struct OpenTags {
+    bold: u32,
+    italic: u32,
+    highlight: u32,
+    strike: u32,
+}
+
+impl OpenTags {
+    fn style(&self) -> TextStyle {
+        TextStyle {
+            bold: self.bold > 0,
+            italic: self.italic > 0,
+            highlight: self.highlight > 0,
+            strike: self.strike > 0,
+        }
+    }
+
+    /// Applies a style tag (`b`, `/b`, `color=red`…). Returns `false` when `tag` is not one.
+    fn apply(&mut self, tag: &str) -> bool {
+        let (counter, opening) = match tag {
+            "b" => (&mut self.bold, true),
+            "/b" => (&mut self.bold, false),
+            "i" => (&mut self.italic, true),
+            "/i" => (&mut self.italic, false),
+            "s" => (&mut self.strike, true),
+            "/s" => (&mut self.strike, false),
+            "/color" => (&mut self.highlight, false),
+            _ if tag.starts_with("color") => (&mut self.highlight, true),
+            _ => return false,
+        };
+        if opening {
+            *counter += 1;
+        } else {
+            *counter = counter.saturating_sub(1);
+        }
+        true
+    }
 }
 
 /// Splits a line of card text on its Unity rich-text tags (`<b>`, `<i>`, `<s>`, `<color=…>`,
 /// `<sprite name="…"/>`). Anything else in angle brackets, such as the trait `<Magic>`, is text.
 pub fn parse_rich(line: &str) -> Vec<Rich<'_>> {
-    // Nesting depth of bold, italic, highlight and strike.
-    let mut depth = [0u32; 4];
-    let run = |text, depth: [u32; 4]| Rich::Text {
-        text,
-        bold: depth[0] > 0,
-        italic: depth[1] > 0,
-        highlight: depth[2] > 0,
-        strike: depth[3] > 0,
-    };
+    let mut open = OpenTags::default();
     let mut out = Vec::new();
+    // Start of the text not yet pushed to `out`, and where to look for the next `<`.
     let mut text_start = 0;
-    let mut i = 0;
-    while let Some(offset) = line[i..].find('<') {
-        let start = i + offset;
+    let mut search_from = 0;
+    while let Some(offset) = line[search_from..].find('<') {
+        let start = search_from + offset;
         let Some(len) = line[start..].find('>') else {
             break;
         };
-        let tag = &line[start + 1..start + len];
+        let end = start + len + 1;
+        let tag = &line[start + 1..end - 1];
         let lower = tag.trim().to_ascii_lowercase();
-        // (style index, opening?)
-        let style = match lower.as_str() {
-            "b" => Some((0, true)),
-            "/b" => Some((0, false)),
-            "i" => Some((1, true)),
-            "/i" => Some((1, false)),
-            "/color" => Some((2, false)),
-            "s" => Some((3, true)),
-            "/s" => Some((3, false)),
-            _ if lower.starts_with("color") => Some((2, true)),
-            _ => None,
-        };
-        let sprite = lower
+        let is_sprite = lower
             .strip_prefix("sprite")
-            .filter(|rest| rest.starts_with([' ', '=']))
-            .map(|_| sprite_name(tag));
-        if style.is_none() && sprite.is_none() {
-            i = start + 1;
+            .is_some_and(|rest| rest.starts_with([' ', '=']));
+
+        // The text before the tag keeps the style that was active before it.
+        let style_before = open.style();
+        let is_style = !is_sprite && open.apply(&lower);
+        if !is_sprite && !is_style {
+            // Not a tag: `<Magic>` stays in the text.
+            search_from = start + 1;
             continue;
         }
         if start > text_start {
-            out.push(run(&line[text_start..start], depth));
+            out.push(Rich::Text(&line[text_start..start], style_before));
         }
-        if let Some(name) = sprite {
-            out.push(Rich::Sprite(name));
+        if is_sprite {
+            out.push(Rich::Sprite(sprite_name(tag)));
         }
-        if let Some((index, open)) = style {
-            depth[index] = if open {
-                depth[index] + 1
-            } else {
-                depth[index].saturating_sub(1)
-            };
-        }
-        i = start + len + 1;
-        text_start = i;
+        text_start = end;
+        search_from = end;
     }
     if text_start < line.len() {
-        out.push(run(&line[text_start..], depth));
+        out.push(Rich::Text(&line[text_start..], open.style()));
     }
     out
 }
@@ -243,6 +270,31 @@ pub fn split_names(text: &str, is_name: impl Fn(&str) -> bool) -> Vec<(&str, Opt
     out
 }
 
+/// `%20` and the like decoded (`My%20Deck` -> `My Deck`); invalid escapes are kept as they are.
+/// Works byte by byte so that multi-byte UTF-8 characters (`%C3%A9` -> `é`) survive.
+pub fn percent_decode(text: &str) -> String {
+    let bytes = text.as_bytes();
+    let mut out = Vec::with_capacity(bytes.len());
+    let mut i = 0;
+    while i < bytes.len() {
+        let escaped = (bytes[i] == b'%')
+            .then(|| text.get(i + 1..i + 3))
+            .flatten()
+            .and_then(|hex| u8::from_str_radix(hex, 16).ok());
+        match escaped {
+            Some(byte) => {
+                out.push(byte);
+                i += 3;
+            }
+            None => {
+                out.push(bytes[i]);
+                i += 1;
+            }
+        }
+    }
+    String::from_utf8_lossy(&out).into_owned()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -274,12 +326,14 @@ mod tests {
 
     #[test]
     fn rich_text() {
-        let plain = |text| Rich::Text {
-            text,
-            bold: false,
-            italic: false,
-            highlight: false,
-            strike: false,
+        let plain = |text| Rich::Text(text, TextStyle::default());
+        let bold = TextStyle {
+            bold: true,
+            ..TextStyle::default()
+        };
+        let red = TextStyle {
+            highlight: true,
+            ..TextStyle::default()
         };
         assert_eq!(
             parse_rich(r#"Auto: [<sprite name="1cost"/>] When <Magic> is <b>here</b>"#),
@@ -287,26 +341,20 @@ mod tests {
                 plain("Auto: ["),
                 Rich::Sprite("1cost"),
                 plain("] When <Magic> is "),
-                Rich::Text {
-                    text: "here",
-                    bold: true,
-                    italic: false,
-                    highlight: false,
-                    strike: false,
-                },
+                Rich::Text("here", bold),
             ]
         );
         assert_eq!(
             parse_rich("<color=red>x</color> y <hololive"),
+            vec![Rich::Text("x", red), plain(" y <hololive")]
+        );
+        assert_eq!(
+            parse_rich("<b>a<b>b</b>c</b>d"),
             vec![
-                Rich::Text {
-                    text: "x",
-                    bold: false,
-                    italic: false,
-                    highlight: true,
-                    strike: false,
-                },
-                plain(" y <hololive"),
+                Rich::Text("a", bold),
+                Rich::Text("b", bold),
+                Rich::Text("c", bold),
+                plain("d"),
             ]
         );
         assert_eq!(
@@ -358,6 +406,13 @@ mod tests {
         assert_eq!(sprite_word("backup"), "Counter");
         assert_eq!(sprite_word("2turn"), "2 turn");
         assert_eq!(sprite_word("mini_clock"), "Clock");
+    }
+
+    #[test]
+    fn percent_decoding() {
+        assert_eq!(percent_decode("A%20B%C3%A9"), "A Bé");
+        assert_eq!(percent_decode("100%"), "100%");
+        assert_eq!(percent_decode("%zz"), "%zz");
     }
 
     #[test]

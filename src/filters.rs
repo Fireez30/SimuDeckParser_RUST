@@ -1,27 +1,43 @@
-//! Card list filters and sorting (independent from the UI).
+//! The card list's filters (type, colour, level… and the search field) and the two sort orders
+//! cards are shown in. Independent from the UI, so it is unit-tested.
 
-use std::cmp::Ordering;
 use std::collections::BTreeSet;
 
-use crate::model::{Card, CardType, Color, SortOrder};
+use crate::model::{Card, CardType, Color};
 use crate::text::contains_ignore_case;
 
-pub const CARD_LIST_ORDER: &[SortOrder] = &[
-    SortOrder::Color,
-    SortOrder::TypeAscending,
-    SortOrder::CostAscending,
-    SortOrder::PowerAscending,
-    SortOrder::KeycodeAscending,
-];
-pub const DECK_ORDER: &[SortOrder] = &[
-    SortOrder::TypeAscending,
-    SortOrder::LevelAscending,
-    SortOrder::CostAscending,
-    SortOrder::PowerAscending,
-    SortOrder::Color,
-];
+/// Sorts cards as the card list shows them: by colour, then type, cost, power and code.
+pub fn sort_for_card_list(cards: &mut [Card]) {
+    cards.sort_by(|a, b| {
+        // Tuples compare field by field: the first difference decides.
+        (a.color, a.card_type, a.cost, a.power, &a.key, a.level).cmp(&(
+            b.color,
+            b.card_type,
+            b.cost,
+            b.power,
+            &b.key,
+            b.level,
+        ))
+    });
+}
 
-/// One group of checkboxes: every value present in the loaded cards, and the checked ones.
+/// Sorts cards as decks show them: characters, then events, then climaxes; inside each type
+/// by level, cost, power and colour.
+pub fn sort_for_deck(cards: &mut [Card]) {
+    cards.sort_by(|a, b| {
+        (a.card_type, a.level, a.cost, a.power, a.color).cmp(&(
+            b.card_type,
+            b.level,
+            b.cost,
+            b.power,
+            b.color,
+        ))
+    });
+}
+
+/// One group of filter chips: every value present in the loaded cards, and the selected ones.
+/// `T` is the type of the values (levels are numbers, colours are [`Color`]s…); `T: Ord + Clone`
+/// says it must be sortable and copyable.
 #[derive(Debug, Clone)]
 pub struct Choice<T: Ord + Clone> {
     pub available: Vec<T>,
@@ -121,20 +137,15 @@ impl Filters {
         self.cx_combo = false;
     }
 
-    /// Offers every value present in `cards`, all checked.
-    pub fn from_cards<'a>(cards: impl IntoIterator<Item = &'a Card> + Clone) -> Self {
+    /// Offers every value present in `cards`, all selected (nothing filtered out yet).
+    pub fn from_cards(cards: &[Card]) -> Self {
         Self {
-            levels: Choice::from_values(cards.clone().into_iter().map(|c| c.level)),
-            costs: Choice::from_values(cards.clone().into_iter().map(|c| c.cost)),
-            colors: Choice::from_values(cards.clone().into_iter().map(|c| c.color)),
-            types: Choice::from_values(cards.clone().into_iter().map(|c| c.card_type)),
-            traits: Choice::from_values(
-                cards
-                    .clone()
-                    .into_iter()
-                    .flat_map(|c| c.traits.iter().cloned()),
-            ),
-            has_cx_combo: cards.into_iter().any(is_cx_combo),
+            levels: Choice::from_values(cards.iter().map(|c| c.level)),
+            costs: Choice::from_values(cards.iter().map(|c| c.cost)),
+            colors: Choice::from_values(cards.iter().map(|c| c.color)),
+            types: Choice::from_values(cards.iter().map(|c| c.card_type)),
+            traits: Choice::from_values(cards.iter().flat_map(|c| c.traits.iter().cloned())),
+            has_cx_combo: cards.iter().any(is_cx_combo),
             cx_combo: false,
             search: String::new(),
         }
@@ -156,48 +167,15 @@ impl Filters {
             && (!self.cx_combo || is_cx_combo(c))
     }
 
-    pub fn apply<'a>(&self, cards: impl IntoIterator<Item = &'a Card>) -> Vec<Card> {
-        cards
-            .into_iter()
-            .filter(|c| self.matches(c))
-            .cloned()
-            .collect()
+    /// The cards that pass every filter and the search.
+    pub fn apply(&self, cards: &[Card]) -> Vec<Card> {
+        cards.iter().filter(|c| self.matches(c)).cloned().collect()
     }
 }
 
 /// The card text has the climax combo keyword.
 pub fn is_cx_combo(c: &Card) -> bool {
     c.text.contains("CxCombo")
-}
-
-/// Lexicographic comparison over `orders`. As in the original tool, every order other than
-/// `TypeAscending` and `Color` first groups cards by type. Ties end on level asc, power desc.
-pub fn compare(a: &Card, b: &Card, orders: &[SortOrder]) -> Ordering {
-    use SortOrder::*;
-    let mut ord = Ordering::Equal;
-    for o in orders {
-        ord = ord
-            .then_with(|| match o {
-                Color => a.color.cmp(&b.color),
-                _ => a.card_type.cmp(&b.card_type),
-            })
-            .then_with(|| match o {
-                LevelAscending => a.level.cmp(&b.level),
-                LevelDescending => b.level.cmp(&a.level),
-                CostAscending => a.cost.cmp(&b.cost),
-                CostDescending => b.cost.cmp(&a.cost),
-                PowerAscending => a.power.cmp(&b.power),
-                PowerDescending => b.power.cmp(&a.power),
-                KeycodeAscending => a.key.cmp(&b.key),
-                Color | TypeAscending => Ordering::Equal,
-            });
-    }
-    ord.then_with(|| a.level.cmp(&b.level))
-        .then_with(|| b.power.cmp(&a.power))
-}
-
-pub fn sort_cards(cards: &mut [Card], orders: &[SortOrder]) {
-    cards.sort_by(|a, b| compare(a, b, orders));
 }
 
 #[cfg(test)]
@@ -238,10 +216,10 @@ mod tests {
             card("ev", Event, Color::Red, 1, 1, 0),
             card("l0c", Character, Color::Red, 0, 0, 1500),
         ];
-        sort_cards(&mut cards, DECK_ORDER);
+        sort_for_deck(&mut cards);
         assert_eq!(keys(&cards), vec!["l0c", "l0a", "l0b", "l3", "ev", "cx"]);
 
-        sort_cards(&mut cards, CARD_LIST_ORDER);
+        sort_for_card_list(&mut cards);
         assert_eq!(keys(&cards), vec!["l0a", "l0b", "l0c", "l3", "ev", "cx"]);
     }
 
@@ -257,7 +235,7 @@ mod tests {
             card("y-c2", Character, Color::Yellow, 3, 2, 10000),
             card("b-c0", Character, Color::Blue, 0, 0, 3000),
         ];
-        sort_cards(&mut cards, CARD_LIST_ORDER);
+        sort_for_card_list(&mut cards);
         assert_eq!(
             keys(&cards),
             vec!["y-c2", "b-c0", "b-cx", "r-c0", "r-c1-6k", "r-c1-9k", "r-ev"]

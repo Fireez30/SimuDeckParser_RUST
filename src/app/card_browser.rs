@@ -1,29 +1,35 @@
-//! Card library: browse a serie (or one of its sets) with search, filter chips and a preview pane.
-//! The deck builder reuses it with a [`Picker`]: clicks add cards to the deck instead.
+//! The card browser: a serie (or one of its sets) as a grid or a list, with a search field,
+//! filter chips and a pane showing the hovered card. It is the Cards screen, and the deck
+//! editor reuses it with a [`Picker`]: clicks then add cards to the deck.
 
 use egui::{CornerRadius, Margin, ScrollArea, Sense, Stroke, Ui, vec2};
 use egui_material_icons::icons::{
     ICON_FILTER_LIST, ICON_FILTER_LIST_OFF, ICON_GRID_VIEW, ICON_SEARCH_OFF, ICON_STYLE,
     ICON_VIEW_LIST,
 };
-use simu_deck_parser::filters::{CARD_LIST_ORDER, Choice, Filters, sort_cards};
-use simu_deck_parser::model::{Card, Serie};
+use simu_deck_parser::filters::{Choice, Filters, sort_for_card_list};
+use simu_deck_parser::model::{CARD_IMAGE_RATIO, Card, Serie};
 
-use super::card_view::{
-    self, CARD_RATIO, DetailPane, card_summary, card_text, pick_buttons,
-};
+use super::assets;
+use super::card_view::{self, DetailPane, card_summary, card_text, pick_buttons};
 use super::theme::{self, scheme};
-use crate::assets;
 
 const GRID_GAP: f32 = 10.0;
 const LIST_IMAGE_WIDTH: f32 = 150.0;
 /// Trait groups longer than this get their own filter field.
 const TRAIT_SEARCH_THRESHOLD: usize = 12;
 
-/// Deck building on top of the card browser.
+/// What the card browser needs from the deck editor to build a deck.
+///
+/// A trait is an interface: [`super::deck_editor::DeckEditor`] implements it, and the browser
+/// calls it without knowing about the editor. Without a picker (the Cards screen), clicks just
+/// pin cards in the side pane.
 pub trait Picker {
+    /// Copies of `card` in the deck.
     fn copies(&self, card: &Card) -> usize;
+    /// Adds a copy (a click on the card).
     fn add(&mut self, card: &Card);
+    /// Removes a copy (a right-click on the card).
     fn remove(&mut self, card: &Card);
     /// Right-hand panel (the deck being built). Returns the card under the pointer there, for
     /// the detail pane, which keeps showing it when the pointer leaves.
@@ -36,7 +42,7 @@ enum View {
     List,
 }
 
-pub struct CardList {
+pub struct CardBrowser {
     /// Loaded serie, and the set shown (`None` = every set of the serie).
     serie: Option<usize>,
     set: Option<usize>,
@@ -53,7 +59,7 @@ pub struct CardList {
     focus_search: bool,
 }
 
-impl Default for CardList {
+impl Default for CardBrowser {
     fn default() -> Self {
         Self {
             serie: None,
@@ -72,7 +78,7 @@ impl Default for CardList {
     }
 }
 
-impl CardList {
+impl CardBrowser {
     pub fn serie_name<'a>(&self, series: &'a [Serie]) -> Option<&'a str> {
         self.serie
             .and_then(|i| series.get(i))
@@ -112,7 +118,7 @@ impl CardList {
 
     fn refilter(&mut self) {
         self.shown = self.filters.apply(&self.cards);
-        sort_cards(&mut self.shown, CARD_LIST_ORDER);
+        sort_for_card_list(&mut self.shown);
     }
 
     /// Opens the serie holding the card `key`, if any.
@@ -125,6 +131,8 @@ impl CardList {
         }
     }
 
+    /// Draws the browser. `title` heads the top bar; `picker` is the deck editor, if any.
+    /// (`Option<&mut dyn Picker>`: maybe a reference to any type implementing [`Picker`].)
     pub fn show(
         &mut self,
         ui: &mut Ui,
@@ -207,23 +215,9 @@ impl CardList {
             || picker.is_some()
             || card_view::pin_requested(ui.ctx());
         if pane {
-            egui::Panel::right("card_list_detail")
-                .resizable(true)
-                .default_size(360.0)
-                .size_range(280.0..=560.0)
-                .show_separator_line(false)
-                .frame(egui::Frame::new().fill(s.surface).inner_margin(Margin {
-                    left: 8,
-                    right: 16,
-                    top: 0,
-                    bottom: 16,
-                }))
-                .show(ui, |ui| {
-                    theme::surface_card(s.surface_container_low).show(ui, |ui| {
-                        ui.set_min_height(ui.available_height());
-                        self.pane.show(ui, picker.as_deref_mut());
-                    });
-                });
+            theme::detail_pane(ui, "card_list_detail", 0, |ui| {
+                self.pane.show(ui, picker.as_deref_mut());
+            });
         }
 
         egui::CentralPanel::default()
@@ -541,7 +535,7 @@ impl CardList {
 
     fn grid(&mut self, ui: &mut Ui, picker: Option<&mut dyn Picker>) {
         let s = scheme(ui);
-        let thumb = vec2(self.thumb_width, self.thumb_width * CARD_RATIO);
+        let thumb = vec2(self.thumb_width, self.thumb_width * CARD_IMAGE_RATIO);
         let columns = (((ui.available_width() - 12.0 + GRID_GAP) / (thumb.x + GRID_GAP)).floor()
             as usize)
             .max(1);
@@ -624,7 +618,7 @@ impl CardList {
 
     fn list(&self, ui: &mut Ui, mut picker: Option<&mut dyn Picker>) {
         let s = scheme(ui);
-        let image = vec2(LIST_IMAGE_WIDTH, LIST_IMAGE_WIDTH * CARD_RATIO);
+        let image = vec2(LIST_IMAGE_WIDTH, LIST_IMAGE_WIDTH * CARD_IMAGE_RATIO);
         let padding = 12.0;
         let spacing = 8.0;
         ScrollArea::vertical().auto_shrink(false).show_rows(
