@@ -27,21 +27,20 @@ git clone https://github.com/Fireez30/SimuDeckParser_RUST.git
 cd SimuDeckParser_RUST
 ```
 
-Build it with a Rust toolchain (install one with [rustup](https://rustup.rs)):
+Scripts at the root of the repository set up a development environment, build a release archive, and install the tool. Linux scripts are bash (Fedora, Debian/Ubuntu and Arch are supported); Windows scripts are PowerShell and use `winget`.
 
-Linux : 
+| Step | Linux | Windows (PowerShell) |
+| --- | --- | --- |
+| Install the tools to develop and test (Rust, linker, libraries) | `./setup.sh` | `powershell -ExecutionPolicy Bypass -File .\setup.ps1` |
+| Build a release archive into `dist/` | `./build.sh` | `powershell -ExecutionPolicy Bypass -File .\build.ps1` |
+| Build and install | `./install.sh` | `powershell -ExecutionPolicy Bypass -File .\install.ps1` |
+| Uninstall | `./install.sh --uninstall` | `powershell -ExecutionPolicy Bypass -File .\install.ps1 -Uninstall` |
 
-```sh
-bash build_linux.sh
-./target/release/simu_deck_parser       
-```
+- `setup.sh` also installs the Windows cross-compilation target (MinGW); skip it with `--no-cross`. Then `./build.sh windows` builds the Windows archive from Linux, and `./build.sh all` builds both.
+- `install.sh` installs to `~/.local/bin` with a desktop entry for the app menu; `PREFIX=/usr/local ./install.sh` installs system-wide.
+- `install.ps1` installs to `%LOCALAPPDATA%\Programs\SimuDeckParser`, adds a Start menu shortcut and puts the folder on your user PATH.
 
-Windows : 
-
-```sh
-bash build_windows.sh
-.\target\x86_64-pc-windows-gnu\release\simu_deck_parser.exe
-```
+To just run it from the source tree: `cargo run --release`.
 
 New to the code (or to Rust)? Start with [documentation/ARCHITECTURE.md](documentation/ARCHITECTURE.md): a map of the code, how the window works, and a short Rust primer for this project.
 
