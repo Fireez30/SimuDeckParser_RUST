@@ -222,6 +222,24 @@ In Settings, "Encore Decks account", sign in with your Encore Decks email and pa
 - If the session has expired, the upload stops (it is not silently uploaded anonymously) and the account is unlinked; sign in again to continue.
 
 
+## Damage calculator
+
+The "Damage" screen estimates how much damage a turn deals, by playing the turn many times with shuffled decks (1 000, 10 000 or 100 000 times).
+
+Pick one of your decks on the left, then set up the turn:
+
+- **Stage**: the three characters on stage, taken from the deck, each with its soul. Enter the soul with every bonus already added (the climax's, the backrow's…): nothing is computed from the cards' texts.
+- **Damage**: the sources of damage of the turn, in the order they happen, as many as needed:
+  - *Attack* by one of the three characters (front, side with the level of the character in front, or direct). The trigger check is drawn from your deck: its soul icons are added, a shot trigger deals 1 damage if the attack is cancelled. The soul a trigger gives stays on the character, so a character that stands again and attacks a second time keeps it.
+  - *Burn*, *Burn if cancelled*, *Burn if not cancelled*, *Burn on climax trigger*: the conditions are about the last attack before it.
+  - *Mill opponent*: cards from the top of the opponent's deck go to their waiting room.
+  - *Musashi* and *Musashi if cancelled*: a card revealed from your deck (the whole deck minus the stage and the climax) deals its level + 1 damage.
+- **Climax**: the climax played this turn. It is only shown (add its soul bonus to the soul of the characters it gives it to: some climaxes boost every character, others only one or two of your choice) and is out of your deck.
+- **Your deck**: the cards left in your deck for the trigger checks: characters and events with no, one or two soul icons, climaxes with soul icons, and shot climaxes. It starts as the whole deck minus the stage and the climax; "Reset" sets it back.
+- **Opponent**: the cards and climaxes in their deck and waiting room (shuffled back when the deck runs out, with the refresh damage), their stock, level and clock. It starts as a deck just refreshed: level 3, 8 stock, no climax out of the deck. Cards added to the stock, level or clock come from the deck; "Refreshed deck" sets the deck back.
+
+"Run" shows the average and median damage, the chance to kill the opponent this turn, the most likely total, a chart of the chance of each total (hover a bar for the chance of at least that much), and each source's average damage, how often it happened and, for attacks, how often it was cancelled. Card power, battles and counters are not simulated.
+
 ## Settings
 
 The settings file contains : 
@@ -242,6 +260,7 @@ Settings :
 beta (0.1.4) :
 
 - Added a feature to upload your own sleeve when editing or creating a deck (PNG or JPEG format)
+- Added a damage calculator screen: set up three attackers, two backrow characters and a climax from a deck, with their effects, and simulate the damage dealt against a given opponent deck
 
 0.1.3 : 
 

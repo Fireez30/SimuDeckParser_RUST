@@ -11,6 +11,7 @@
 //! - Cards: the [`card_browser::CardBrowser`];
 //! - Decks (`decks_screen/`): the simulator's decks, the deck editor, imports, uploads, PDFs;
 //! - Encore Deck (`encore_screen.rs`): the linked Encore Decks account's decks;
+//! - Damage (`damage_screen.rs`): simulating the damage of a turn of attacks;
 //! - Settings (`settings_screen.rs`, `account.rs`).
 
 mod account;
@@ -18,6 +19,7 @@ mod assets;
 mod background;
 mod card_browser;
 mod card_view;
+mod damage_screen;
 mod deck_editor;
 mod deck_preview;
 mod decks_screen;
@@ -34,8 +36,8 @@ use std::sync::Arc;
 
 use egui::{Margin, RichText, ThemePreference, Ui};
 use egui_material_icons::icons::{
-    ICON_CLOUD_DOWNLOAD, ICON_DARK_MODE, ICON_ERROR, ICON_LIGHT_MODE, ICON_SETTINGS, ICON_STACKS,
-    ICON_STYLE,
+    ICON_CALCULATE, ICON_CLOUD_DOWNLOAD, ICON_DARK_MODE, ICON_ERROR, ICON_LIGHT_MODE,
+    ICON_SETTINGS, ICON_STACKS, ICON_STYLE,
 };
 use simu_deck_parser::encoredecks::account::{Account, SessionExpired};
 use simu_deck_parser::model::Serie;
@@ -45,6 +47,7 @@ use simu_deck_parser::simulator::folder::SimulatorFolder;
 use account::AccountForm;
 use background::Task;
 use card_browser::CardBrowser;
+use damage_screen::DamageScreen;
 use decks_screen::DecksScreen;
 use encore_screen::EncoreScreen;
 use setup_screen::Setup;
@@ -87,6 +90,7 @@ enum Screen {
     Cards,
     Decks,
     Encore,
+    Damage,
     Settings,
 }
 
@@ -96,6 +100,7 @@ impl Screen {
         match self {
             Screen::Decks => "decks",
             Screen::Encore => "encore",
+            Screen::Damage => "damage",
             _ => "cards",
         }
     }
@@ -168,6 +173,7 @@ pub struct App {
     card_browser: CardBrowser,
     decks_screen: DecksScreen,
     encore_screen: EncoreScreen,
+    damage_screen: DamageScreen,
 }
 
 impl App {
@@ -187,6 +193,7 @@ impl App {
         setup.set_path(settings.get(settings::SIMULATOR_PATH).unwrap_or_default());
         let start_screen = match settings.get(settings::START_SCREEN).as_deref() {
             Some("decks") => Screen::Decks,
+            Some("damage") => Screen::Damage,
             _ => Screen::Cards,
         };
         let account_form = AccountForm::restoring(ctx, settings.get(settings::ENCORE_USER));
@@ -209,6 +216,7 @@ impl App {
             card_browser: CardBrowser::default(),
             decks_screen: DecksScreen::default(),
             encore_screen: EncoreScreen::default(),
+            damage_screen: DamageScreen::default(),
         };
         if app.setup.resolved.is_some() {
             app.load_simulator(ctx, false);
@@ -266,7 +274,16 @@ impl App {
                 Notice::from_error("Could not read the simulator decks", &e),
             );
         }
-        if matches!(screen, Screen::Cards | Screen::Decks) {
+        if screen == Screen::Damage
+            && let Some(folder) = &self.folder
+            && let Err(e) = self.damage_screen.reload(&folder.decks())
+        {
+            self.notify(
+                ctx,
+                Notice::from_error("Could not read the simulator decks", &e),
+            );
+        }
+        if matches!(screen, Screen::Cards | Screen::Decks | Screen::Damage) {
             self.save_setting(ctx, settings::START_SCREEN, screen.key());
         }
         self.screen = screen;
@@ -291,6 +308,7 @@ impl App {
                 (Screen::Cards, ICON_STYLE, "Cards"),
                 (Screen::Decks, ICON_STACKS, "Decks"),
                 (Screen::Encore, ICON_CLOUD_DOWNLOAD, "Encore Deck"),
+                (Screen::Damage, ICON_CALCULATE, "Damage"),
             ] {
                 if theme::rail_item(ui, icon, label, self.screen == screen).clicked() {
                     target = Some(screen);
@@ -421,6 +439,9 @@ impl App {
                     account_pending,
                 );
             }
+            Screen::Damage => {
+                self.damage_screen.show(ui, &self.series, &decks_dir);
+            }
             Screen::Settings => {
                 let s = scheme(ui);
                 egui::CentralPanel::default()
@@ -470,6 +491,7 @@ impl eframe::App for App {
         let notices = [
             self.decks_screen.take_notice(),
             self.encore_screen.take_notice(),
+            self.damage_screen.take_notice(),
         ];
         for notice in notices.into_iter().flatten() {
             self.notify(&ctx, notice);

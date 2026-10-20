@@ -16,6 +16,7 @@
 //! | [`card_index`]   | Finding loaded cards by code or by name                               |
 //! | [`filters`]      | The card list's filters and sort orders                               |
 //! | [`deck_builder`] | A deck being built, and the deck rules (50 cards, 4 copies…)          |
+//! | [`damage_sim`]   | The damage calculator: simulating a turn of damage                    |
 //! | [`encoredecks`]  | encoredecks.com: import, upload, account sign-in                     |
 //! | [`pdf`]          | Printable proxies and translation sheets                              |
 //! | [`settings`]     | The small `key:value` settings file                                   |
@@ -26,6 +27,7 @@
 
 pub mod card_codes;
 pub mod card_index;
+pub mod damage_sim;
 pub mod deck_builder;
 pub mod encoredecks;
 pub mod filters;

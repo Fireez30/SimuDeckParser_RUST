@@ -175,7 +175,7 @@ mod tests {
         .unwrap();
         fs::write(alternate.join("ENW49/KS_W49_E001.jpg"), b"").unwrap();
 
-        let series = load_series(&cards, &alternate, &CommonEffects::new()).unwrap();
+        let series = load_series(&cards, &alternate, &CommonEffects::default()).unwrap();
         // `Key` holds card folders only, so it is not a serie.
         assert_eq!(series.len(), 1);
         let s = &series[0];

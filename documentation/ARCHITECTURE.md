@@ -35,6 +35,7 @@ src/
 ├── card_index.rs           Finding loaded cards by code (CardIndex) or by name (NameIndex).
 ├── filters.rs              The card list's filters, and the two sort orders.
 ├── deck_builder.rs         A deck being built (DeckList) and the deck rules (50 cards, 4 copies…).
+├── damage_sim.rs           The damage calculator: playing a turn of attacks many times.
 ├── settings.rs             The settings file, and every key it holds.
 ├── fonts.rs                The fonts compiled into the program.
 ├── simulator/              The simulator's install folder:
@@ -64,6 +65,7 @@ src/
     ├── deck_preview.rs       An open deck's stats and card groups (Decks and Encore screens).
     ├── sleeve_picker.rs      The sleeve picker popup.
     ├── encore_screen.rs      The Encore Deck screen: the linked account's decks.
+    ├── damage_screen.rs      The Damage screen: setting up a turn and simulating its damage.
     ├── settings_screen.rs    The Settings screen.
     ├── account.rs            Linking the Encore Decks account (Settings).
     ├── theme/                Colours, fonts and the Material 3 components (buttons, chips…).
@@ -95,6 +97,14 @@ file (a taken name gets a ` (2)` suffix).
 
 **Uploading.** `encoredecks::upload::upload` looks every card up on the site (it stores decks as
 its own card ids), and publishes nothing unless all 50 cards were found.
+
+**Simulating damage.** The Damage screen builds a `damage_sim::Turn` (the soul of the three
+characters on stage, the sources of damage in order, the trigger cards left in the player's deck,
+and the levels of the deck minus the stage and the climax for Musashi effects) and an `Opponent`
+(their deck, waiting room, stock, level and clock), then runs `damage_sim::simulate` in a
+background task. Nothing is read from the cards' texts: the user enters the soul and the damage.
+The result is a histogram of the total damage, from which the screen shows the average, the
+chance to kill and the chance of each total.
 
 **Printing.** `pdf::proxies` and `pdf::translation` build the PDF bytes; the export dialog
 writes them to the Downloads folder.

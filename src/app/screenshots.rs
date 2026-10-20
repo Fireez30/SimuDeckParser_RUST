@@ -373,6 +373,24 @@ fn screenshots() {
         shot(&mut harness, "6c-encore-preview");
         harness.state_mut().account = None;
         harness.run_steps(2);
+        // The Damage screen: a turn set up from a deck, then simulated.
+        harness.get_by_label("Damage").click();
+        shot(&mut harness, "7a-damage");
+        harness.get_by_label(deck_name).click();
+        harness.run_steps(2);
+        harness.state_mut().damage_screen.fill_stage();
+        shot(&mut harness, "7b-damage-setup");
+        // Below the fold: started directly rather than clicked.
+        let ctx = harness.ctx.clone();
+        harness.state_mut().damage_screen.run(&ctx);
+        for _ in 0..200 {
+            harness.step();
+            if harness.state().damage_screen.has_results() {
+                break;
+            }
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        shot(&mut harness, "7c-damage-results");
         harness.get_by_label("Settings").click();
         shot(&mut harness, "7-settings");
         harness.state_mut().account = Some(Account {

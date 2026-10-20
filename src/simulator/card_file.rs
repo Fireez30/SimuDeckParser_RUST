@@ -155,37 +155,68 @@ fn split_params(s: &str) -> (&str, Option<Vec<&str>>) {
 
 /// Expands `*Effect(args)` using the common effects file; falls back to the raw reference.
 fn expand_effect(reference: &str, effects: &CommonEffects) -> String {
-    let parsed = reference.replace("()", "");
-    if let Some(text) = effects.get(&parsed) {
-        return text.trim().to_string();
+    match find_definition(reference, &effects.text) {
+        Some((text, false)) => text,
+        Some((text, true)) => text
+            .replace('$', "")
+            .replace('|', " or ")
+            .trim()
+            .to_string(),
+        None => reference.trim().to_string(),
+    }
+}
+
+/// The script of a `*Effect(args)` script line, with nested references expanded too; the line
+/// itself when the common effects file does not define it.
+fn expand_script_line(line: &str, effects: &CommonEffects, depth: u32) -> String {
+    let Some(reference) = line.strip_prefix('*') else {
+        return format!("{line}\n");
+    };
+    match find_definition(reference, &effects.script) {
+        // A depth limit, in case a definition refers to itself.
+        Some((script, _)) if depth < 4 => script
+            .lines()
+            .map(|l| expand_script_line(l.trim(), effects, depth + 1))
+            .collect(),
+        _ => format!("{line}\n"),
+    }
+}
+
+/// The definition `reference` (`Name(args)`) points to, with the arguments in place of the
+/// parameters, and whether arguments were put in.
+fn find_definition(
+    reference: &str,
+    definitions: &BTreeMap<String, String>,
+) -> Option<(String, bool)> {
+    let parsed = reference.trim().replace("()", "");
+    if let Some(text) = definitions.get(&parsed) {
+        return Some((text.trim().to_string(), false));
     }
 
     let (ref_prefix, ref_params) = split_params(&parsed);
-    if let Some(ref_params) = ref_params {
-        for (effect_key, effect_text) in effects {
-            let (key_prefix, key_params) = split_params(effect_key.trim());
-            let Some(key_params) = key_params else {
-                continue;
-            };
-            // The original gave up (and dropped the effect) on a parameter count mismatch;
-            // keep looking for an overload with the right arity instead.
-            if key_prefix != ref_prefix || key_params.len() != ref_params.len() {
-                continue;
-            }
-            let mut text = effect_text.trim().to_string();
-            for (name, value) in key_params.iter().zip(&ref_params) {
-                if !name.is_empty() {
-                    text = text.replace(name, value);
-                }
-            }
-            return text
-                .replace('$', "")
-                .replace('|', " or ")
-                .trim()
-                .to_string();
+    let ref_params = ref_params?;
+    for (key, definition) in definitions {
+        let (key_prefix, key_params) = split_params(key.trim());
+        let Some(key_params) = key_params else {
+            continue;
+        };
+        // The original gave up (and dropped the effect) on a parameter count mismatch;
+        // keep looking for an overload with the right arity instead.
+        if key_prefix != ref_prefix || key_params.len() != ref_params.len() {
+            continue;
         }
+        let mut text = definition.trim().to_string();
+        let mut params: Vec<_> = key_params.iter().zip(&ref_params).collect();
+        // Longer names first: `NAME` must not replace the start of `NAME1`.
+        params.sort_by_key(|(name, _)| std::cmp::Reverse(name.len()));
+        for (name, value) in params {
+            if !name.is_empty() {
+                text = text.replace(name, value);
+            }
+        }
+        return Some((text, true));
     }
-    reference.trim().to_string()
+    None
 }
 
 /// Reads the content of a card file. Artwork is looked up in `set_path`, then in
@@ -293,6 +324,11 @@ fn parse_pass(
             } else {
                 d.text.push_str(&expand_effect(rest, effects));
                 d.text.push('\n');
+                // The damage calculator reads the script: add the effect's, when it has one.
+                if find_definition(rest, &effects.script).is_some() {
+                    d.code
+                        .push_str(&expand_script_line(line.trim(), effects, 0));
+                }
             }
         } else if line.starts_with("EndCard") {
             let finished = std::mem::take(&mut d);
@@ -310,8 +346,8 @@ fn parse_pass(
             // Simulator script: everything until the next `Text` line.
             d.parsing_text = false;
             d.parsing_code = true;
-            d.code.push_str(line.trim());
-            d.code.push('\n');
+            d.code
+                .push_str(&expand_script_line(line.trim(), effects, 0));
         } else if let Some(rest) = line.strip_prefix("Text ") {
             d.parsing_code = false;
             d.parsing_text = true;
@@ -452,6 +488,31 @@ EndCard
     }
 
     #[test]
+    fn common_effects_are_expanded_in_the_script() {
+        let effects = parse_common_effects(
+            "Define: OptionalBurn(AMOUNT)\n\tIf Yes\n\t{\n\t\tBurn AMOUNT\n\t}\n\
+             Define: OnCancelBurn1\n\tAuto: OnDamageCancel\n\t{\n\t\tBurn 1\n\t}\n\
+             \tText Auto: When damage dealt by this card is canceled, deal 1 damage.\n",
+        );
+        let cards = parse_card_data(
+            "Character: A-001\nName Burner\nAuto: OnAttack\n{\n\t*OptionalBurn(2)\n}\n\
+             Text Auto: When this card attacks, you may deal 2 damage.\n*OnCancelBurn1\nEndCard\n",
+            Path::new("/nowhere"),
+            Path::new("/nowhere"),
+            &effects,
+        );
+        let c = &cards["A-001"];
+        assert_eq!(
+            c.code,
+            "Auto: OnAttack\n{\nIf Yes\n{\nBurn 2\n}\n}\nAuto: OnDamageCancel\n{\nBurn 1\n}\n"
+        );
+        assert!(
+            c.text
+                .ends_with("When damage dealt by this card is canceled, deal 1 damage.\n")
+        );
+    }
+
+    #[test]
     fn new_format_events_and_typos() {
         let cards = parse_card_data(
             "Event: AYT/W110-027\nName Memory\nJPName 思い出\nRequirement StageContains 1\n\
@@ -461,7 +522,7 @@ EndCard
              Event:: SMP/W60-096\nName Typo\nEndCard\n",
             Path::new("/nowhere"),
             Path::new("/nowhere"),
-            &CommonEffects::new(),
+            &CommonEffects::default(),
         );
         assert_eq!(cards.len(), 2, "a stray EndCard adds no card");
         let e = &cards["AYT/W110-027"];
@@ -479,7 +540,7 @@ EndCard
              Character: A-001\nName Source\nLevel 2\nTrait1 Magic\nEndCard\n",
             Path::new("/nowhere"),
             Path::new("/nowhere"),
-            &CommonEffects::new(),
+            &CommonEffects::default(),
         );
         assert_eq!(cards["A-002"].name, "Source");
         assert_eq!(cards["A-002"].level, 2);
