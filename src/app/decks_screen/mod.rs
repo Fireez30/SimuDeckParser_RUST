@@ -9,13 +9,14 @@ mod export_dialog;
 mod import_dialog;
 mod upload_dialog;
 
+use std::cmp::Reverse;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
 use egui::{CornerRadius, Margin, RichText, ScrollArea, Ui, vec2};
 use egui_material_icons::icons::{
-    ICON_ADD, ICON_CONTENT_COPY, ICON_DOWNLOAD, ICON_EDIT, ICON_PRINT, ICON_STACKS, ICON_TRANSLATE,
-    ICON_UPLOAD,
+    ICON_ADD, ICON_CONTENT_COPY, ICON_DOWNLOAD, ICON_EDIT, ICON_PRINT, ICON_SORT, ICON_STACKS,
+    ICON_TRANSLATE, ICON_UPLOAD,
 };
 use simu_deck_parser::card_index::CardIndex;
 use simu_deck_parser::deck_builder::DeckList;
@@ -46,6 +47,55 @@ struct PickedDeck {
     summary: Summary,
 }
 
+/// The order of the deck list.
+#[derive(Clone, Copy, PartialEq, Eq, Default)]
+pub enum DeckSort {
+    #[default]
+    Name,
+    /// Most recently saved first; decks without a date last.
+    Date,
+}
+
+impl DeckSort {
+    /// The value saved in the settings, to keep the order at the next start.
+    pub fn key(self) -> &'static str {
+        match self {
+            DeckSort::Name => "name",
+            DeckSort::Date => "date",
+        }
+    }
+
+    pub fn from_key(key: Option<&str>) -> Self {
+        match key {
+            Some("date") => DeckSort::Date,
+            _ => DeckSort::Name,
+        }
+    }
+
+    fn other(self) -> Self {
+        match self {
+            DeckSort::Name => DeckSort::Date,
+            DeckSort::Date => DeckSort::Name,
+        }
+    }
+
+    fn label(self) -> &'static str {
+        match self {
+            DeckSort::Name => "Name",
+            DeckSort::Date => "Date",
+        }
+    }
+
+    /// Sorts `decks` in this order (the files come sorted by name).
+    fn apply(self, decks: &mut [DeckFile]) {
+        decks.sort_by_key(|d| (d.ai, d.name.to_lowercase()));
+        if self == DeckSort::Date {
+            // Stable: decks saved at the same time stay sorted by name.
+            decks.sort_by_key(|d| (d.ai, Reverse(d.saved_at())));
+        }
+    }
+}
+
 /// A button of the open deck (or "New deck") was clicked; carried out after drawing.
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum DeckAction {
@@ -67,6 +117,9 @@ pub struct DecksScreen {
     picked: Option<PickedDeck>,
     /// The deck list's search field.
     query: String,
+    sort: DeckSort,
+    /// The user picked another order this frame: the app saves it in the settings.
+    sort_changed: bool,
     /// Sleeves of the simulator's `Sleeves` folder, for the sleeve picker.
     sleeves: Vec<Sleeve>,
     /// Where the sleeves live; the list is read again whenever a deck is opened.
@@ -96,6 +149,7 @@ impl DecksScreen {
     /// Re-reads the deck files. The open deck stays open if its file still exists.
     pub fn reload(&mut self, decks_dir: &Path) -> anyhow::Result<()> {
         self.decks = deck_files::list_decks(decks_dir)?;
+        self.sort.apply(&mut self.decks);
         if let Some(picked) = &mut self.picked {
             match self.decks.iter().find(|d| d.path == picked.file.path) {
                 Some(file) => picked.file = file.clone(),
@@ -103,6 +157,17 @@ impl DecksScreen {
             }
         }
         Ok(())
+    }
+
+    /// Sets the order of the deck list (the one saved in the settings, at startup).
+    pub fn set_sort(&mut self, sort: DeckSort) {
+        self.sort = sort;
+        self.sort.apply(&mut self.decks);
+    }
+
+    /// The order the user just picked, if they picked one since the last call.
+    pub fn take_sort_change(&mut self) -> Option<DeckSort> {
+        std::mem::take(&mut self.sort_changed).then_some(self.sort)
     }
 
     fn clear_selection(&mut self) {
@@ -358,6 +423,16 @@ impl DecksScreen {
             ui.add_space(4.0);
             ui.label(theme::headline("Decks").color(s.on_surface));
             ui.label(theme::label(own.to_string()).color(s.on_surface_variant));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let other = self.sort.other();
+                let sort = theme::text(Some(ICON_SORT), self.sort.label())
+                    .show(ui)
+                    .on_hover_text(format!("Sort by {}", other.label().to_lowercase()));
+                if sort.clicked() {
+                    self.set_sort(other);
+                    self.sort_changed = true;
+                }
+            });
         });
         ui.add_space(4.0);
         ui.horizontal(|ui| {

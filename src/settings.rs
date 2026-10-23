@@ -18,6 +18,8 @@ pub const ENCORE_USER: &str = "encoredecks_user";
 pub const THEME: &str = "ui_theme";
 /// The screen opened at startup: the last one used, `cards` or `decks`.
 pub const START_SCREEN: &str = "ui_screen";
+/// How the Decks screen sorts its list: the last order used, `name` or `date`.
+pub const DECK_SORT: &str = "ui_deck_sort";
 /// The serie the card list opens at startup: the last one shown.
 pub const SERIE: &str = "ui_serie";
 

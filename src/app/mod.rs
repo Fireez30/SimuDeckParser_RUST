@@ -48,7 +48,7 @@ use account::AccountForm;
 use background::Task;
 use card_browser::CardBrowser;
 use damage_screen::DamageScreen;
-use decks_screen::DecksScreen;
+use decks_screen::{DeckSort, DecksScreen};
 use encore_screen::EncoreScreen;
 use setup_screen::Setup;
 use theme::{Snackbar, scheme};
@@ -197,6 +197,10 @@ impl App {
             _ => Screen::Cards,
         };
         let account_form = AccountForm::restoring(ctx, settings.get(settings::ENCORE_USER));
+        let mut decks_screen = DecksScreen::default();
+        decks_screen.set_sort(DeckSort::from_key(
+            settings.get(settings::DECK_SORT).as_deref(),
+        ));
         let mut app = Self {
             settings,
             account: None,
@@ -214,7 +218,7 @@ impl App {
             confirm_quit: false,
             quitting: false,
             card_browser: CardBrowser::default(),
-            decks_screen: DecksScreen::default(),
+            decks_screen,
             encore_screen: EncoreScreen::default(),
             damage_screen: DamageScreen::default(),
         };
@@ -429,6 +433,10 @@ impl App {
                     self.account.as_ref(),
                     account_pending,
                 );
+                if let Some(sort) = self.decks_screen.take_sort_change() {
+                    let ctx = ui.ctx().clone();
+                    self.save_setting(&ctx, settings::DECK_SORT, sort.key());
+                }
             }
             Screen::Encore => {
                 self.encore_screen.show(

@@ -38,6 +38,16 @@ pub struct DeckFile {
     pub ai: bool,
 }
 
+/// The simulator's deck date format, `HH:MM  MM/DD/YYYY`.
+const DATE_FORMAT: &str = "%H:%M  %m/%d/%Y";
+
+impl DeckFile {
+    /// When the deck was saved; `None` when its date is missing or not in the simulator's format.
+    pub fn saved_at(&self) -> Option<chrono::NaiveDateTime> {
+        chrono::NaiveDateTime::parse_from_str(self.date.trim(), DATE_FORMAT).ok()
+    }
+}
+
 /// Parses a deck file; the name falls back to the file name.
 pub fn parse_deck(content: &str, path: &Path) -> DeckFile {
     let stem = path
@@ -215,7 +225,7 @@ pub fn update_deck(
 
 /// Current time in the simulator's deck date format, `HH:MM  MM/DD/YYYY`.
 pub fn now_date() -> String {
-    chrono::Local::now().format("%H:%M  %m/%d/%Y").to_string()
+    chrono::Local::now().format(DATE_FORMAT).to_string()
 }
 
 #[cfg(test)]
@@ -231,6 +241,9 @@ mod tests {
         );
         assert_eq!(deck.name, "My deck");
         assert_eq!(deck.date, "12:00  06/15/2010");
+        let saved =
+            chrono::NaiveDate::from_ymd_opt(2010, 6, 15).and_then(|d| d.and_hms_opt(12, 0, 0));
+        assert_eq!(deck.saved_at(), saved);
         assert_eq!(deck.sleeve, "RZ Emilia 1.jpg");
         assert_eq!(deck.codes, ["BD/W95-017", "BD/W95-017", "BD/W95-001"]);
         assert!(deck.ai);
