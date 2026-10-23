@@ -261,7 +261,7 @@ beta (0.1.4) :
 
 - Added a feature to upload your own sleeve when editing or creating a deck (PNG or JPEG format)
 - Added a damage calculator screen: set up three attackers, two backrow characters and a climax from a deck, with their effects, and simulate the damage dealt against a given opponent deck
-
+- Added deck list sorting by date and name
 0.1.3 : 
 
 - Fixed the card  panel during deck creation and edit so it doesn't disappear 
